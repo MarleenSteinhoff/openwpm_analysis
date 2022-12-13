@@ -8,7 +8,8 @@ from clint.textui import progress
 
 username = "census_user_1LyLrq"
 password = "1zcZvRUfSiqKYmsd"
-
+crawl_dir = "/crawler/datain"
+out_dir = "/crawler/dataout"
 
 def get_filename_from_cd(cd):
     """
@@ -28,11 +29,6 @@ def download_and_manipulate(url, count=0):
 
     current_folder = pathlib.Path(__file__).parent.resolve()
 
-    #filename = os.path.join(current_folder, "datain", "file.lz4")
-    #outfile = os.path.join(current_folder, "dataout", "file.sqlite")
-
-    #print(f"file should be saved in {filename}")
-
     r = requests.get(url, auth=(username, password), stream=True)
     
     print(f"request resolved with code {r.status_code}")
@@ -44,6 +40,7 @@ def download_and_manipulate(url, count=0):
     print(url)
     print(filename)
     print(outfile)
+
 
     if r.status_code == 200:
         with open(filename, "wb") as out:
@@ -60,18 +57,20 @@ def download_and_manipulate(url, count=0):
         print("error downloading file")
 
     #### DO SHIT HERE 
-   
+
     os.system(f"lz4 -dc {filename} > {outfile}")
-    os.system(f"mv {outfile} /home/fsadmin/analysis_result/datain")
-    os.system(f"mkdir /home/fsadmin/anaylsis_result/dataout")
-    os.system(f"python analyze_crawl.py /home/fsadmin/analysis_result/datain/ /home/fsadmin/analysis_result/dataout/")
-    os.system(f"mv /home/fsadmin/analysis_result/dataout/ /home/fsadmin/analysis_result/results/{filename}")
-    os.system(f"rm -f /home/fsadmin/analysis_result/datain/*")
+    os.system(f"mv {outfile} {crawl_dir}")
+    os.system(f"python analyze_crawl.py {crawl_dir} {out_dir}")
+    os.system(f"mv {out_dir} {out_dir}{filename}")
+    # remove all files from current crawl
+    os.system(f"rm -f {crawl_dir}*")
+    os.system(f"rm -f {out_dir}*")
+
     ### END SHIT HERE
 
     print("finished, deleting downloaded archive and sql database...")
-    os.remove(filename)
-    os.remove(outfile)
+    # os.remove(filename)
+    # os.remove(outfile)
 
 if __name__ == "__main__":
 
