@@ -43,6 +43,7 @@ def download_and_manipulate(url, count=0):
     outfile = os.path.splitext(filename)[0]
     print(url)
     print(filename)
+    print(outfile)
 
     if r.status_code == 200:
         with open(filename, "wb") as out:
@@ -61,9 +62,11 @@ def download_and_manipulate(url, count=0):
     #### DO SHIT HERE 
    
     os.system(f"lz4 -dc {filename} > {outfile}")
-    os.system("python analyze_crawl.py /home/fsadmin/analysis_result/datain/ /home/fsadmin/analysis_result/dataout/")
-    os.system(f"mv /home/fsadmin/analysis_result/dataout /home/fsadmin/analysis_result{filename}")
-
+    os.system(f"mv {outfile} /home/fsadmin/analysis_result/datain")
+    os.system(f"mkdir /home/fsadmin/anaylsis_result/dataout")
+    os.system(f"python analyze_crawl.py /home/fsadmin/analysis_result/datain/ /home/fsadmin/analysis_result/dataout/")
+    os.system(f"mv /home/fsadmin/analysis_result/dataout/ /home/fsadmin/analysis_result/results/{filename}")
+    os.system(f"rm -f /home/fsadmin/analysis_result/datain/*")
     ### END SHIT HERE
 
     print("finished, deleting downloaded archive and sql database...")

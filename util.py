@@ -123,6 +123,7 @@ def get_crawl_dir(crawl_dir):
         print("Missing crawl dir (archive name mismatch)", crawl_dir)
         crawl_dir_pattern = join(dirname(crawl_dir), "*201*")
         crawl_dir = glob.glob(crawl_dir_pattern)
+        print(len(crawl_dir))
         assert len(crawl_dir) == 1
         return crawl_dir[0]
 
