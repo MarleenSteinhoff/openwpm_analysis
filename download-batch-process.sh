@@ -53,7 +53,9 @@ FULL_FILE_NAME="$EXTRACTION_DIR/*.lz4"
 
 while IFS= read -r line
 do
+	echo "$line"
   download $line
+ exit
   decompress_and_process $crawl_archive_lz4
   echo "$line"
 
