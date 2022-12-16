@@ -39,7 +39,7 @@ urls=' "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/sta
 function decompress_and_process(){
   echo "Downloading file to process..."
   ARCHIVE_BASE_NAME=$(basename "$1")
-  CRAWL_NAME=${ARCHIVE_BASE_NAME/.tar.lz4/}
+  CRAWL_NAME=${ARCHIVE_BASE_NAME.tar.lz4}
   CRAWL_DATA_PATH=$EXTRACTION_DIR/$CRAWL_NAME
   echo "Will extract $1 to $CRAWL_DATA_PATH"
   time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
