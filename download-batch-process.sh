@@ -6,35 +6,10 @@ EXTRACTION_DIR="/crawler/census_data_lz4/extractiondir"
 CODE_DIR="/home/fsadmin/analysis/openwpm_analysis"
 CENSUS_LZ4_DATA_PATH="/crawler/census_data_lz4"
 ROOT_OUT_DIR="/crawler/results"
+DOWNLOAD_URL_PATH="/crawler/census_data_lz4/urls.txt"
 
 CENSUS_NORMALIZED_LZ4_DATA_PATH=${ROOT_OUT_DIR}/normalized/
 mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
-
-URLS =' "https://webtransparency.cs.princeton.edu/webcensus/samples/sample_2018-06_1m_stateless_census_crawl.sqlite.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2015-12_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-03_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-04_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-05_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-06_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-07_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-08_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-09_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-01_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-02_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-03_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-04_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-05_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-06_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-07_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-09_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-10_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-12_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-01_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-02_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-03_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-06_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-11_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2019-06_1m_stateless.tar.lz4"'
 
 
 function download(){
@@ -73,11 +48,15 @@ FILE_NAME="${ARCHIVE_BASE_NAME%.*}"
   rm -rf $CENSUS_LZ4_DATA_PATH/*201*
   
 }
-for $current_url in $URLS
-  $DWNLD_URL = $current_url
-  do download
-  do decompress_and_process $crawl_archive_lz4 $1
-done;
+
+
+while IFS= read -r line
+do
+  download
+  decompress_and_process $crawl_archive_lz4 $
+  echo "$line"
+
+done < "$DOWNLOAD_URL_PATH"
 
 
 
