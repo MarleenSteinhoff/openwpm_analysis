@@ -10,7 +10,8 @@ ROOT_OUT_DIR="/crawler/results"
 CENSUS_NORMALIZED_LZ4_DATA_PATH=${ROOT_OUT_DIR}/normalized/
 mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
 
-urls=' "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2015-12_1m_stateless.tar.lz4"
+URLS =' "https://webtransparency.cs.princeton.edu/webcensus/samples/sample_2018-06_1m_stateless_census_crawl.sqlite.lz4"
+        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2015-12_1m_stateless.tar.lz4"
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-03_1m_stateless.tar.lz4"
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-04_1m_stateless.tar.lz4"
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-05_1m_stateless.tar.lz4"
@@ -36,10 +37,17 @@ urls=' "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/sta
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2019-06_1m_stateless.tar.lz4"'
 
 
+function download(){
+  echo "Downloading into $CENSUS_LZ4_DATA_PATH"
+  cd $CODE_DIR
+  echo "python download_file.py $DWNLD_URL $EXTRACTION_DIR"
+  python download_file.py $DWNLD_URL $EXTRACTION_DIR
+}
+
 function decompress_and_process(){
 echo "Processing downloaded file..."  
 ARCHIVE_BASE_NAME=$(basename "$1")
-  FILE_NAME="${ARCHIVE_BASE_NAME%.*}"
+FILE_NAME="${ARCHIVE_BASE_NAME%.*}"
   
   echo "Will extract $1 to $CRAWL_DATA_PATH"
   echo "$FILE_NAME"
@@ -60,14 +68,16 @@ ARCHIVE_BASE_NAME=$(basename "$1")
   mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH/$CRAWL_NAME
   OUT_NORMALIZED_ARCHIVE=$EXTRACTION_DIR/$ARCHIVE_BASE_NAME
   cd $EXTRACTION_DIR
-  echo "SUCCESS!"
   echo "Will remove files from $EXTRACTION_DIR and $CENSUS_LZ4_DATA_PATH"
   rm -rf $EXTRACTION_DIR/*201*
   rm -rf $CENSUS_LZ4_DATA_PATH/*201*
   
 }
-
-
-for crawl_archive_lz4 in $CENSUS_LZ4_DATA_PATH/*.lz4
+for $current_url in $URLS
+  $DWNLD_URL = $current_url
+  do download
   do decompress_and_process $crawl_archive_lz4 $1
 done;
+
+
+
