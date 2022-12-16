@@ -15,16 +15,14 @@ if __name__ == '__main__':
     t0 = time()
     url = sys.argv[1]
     extraction_dir = sys.argv[2]
-    print("url " + url)
-    print("directory " + extraction_dir)
-    
+
     #load secrets
     load_dotenv()
     username = os.environ.get('WEBTAPUSER')
     password = os.environ.get('PASSWORD')
 
     print(f"Downloading file {url}")
-
+    os.system(f"cd {extraction_dir}")
     r = requests.get(url, auth=(username, password), stream=True)
     
     print(f"request resolved with code {r.status_code}")
