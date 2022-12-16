@@ -5,6 +5,7 @@ import os
 from urllib.parse import urlparse
 import sys
 from dotenv import load_dotenv 
+from clint.textui import progress
 
 
 
