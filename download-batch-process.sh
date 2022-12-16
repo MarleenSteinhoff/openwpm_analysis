@@ -10,8 +10,6 @@ ROOT_OUT_DIR="/crawler/results"
 CENSUS_NORMALIZED_LZ4_DATA_PATH=${ROOT_OUT_DIR}/normalized/
 mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
 
-test='"https://webtransparency.cs.princeton.edu/webcensus/samples/sample_2018-06_1m_stateless_census_crawl.sqlite.lz4"'
-
 urls=' "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2015-12_1m_stateless.tar.lz4"
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-03_1m_stateless.tar.lz4"
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-04_1m_stateless.tar.lz4"
@@ -66,13 +64,8 @@ function decompress_and_process(){
 }
 
 
-
-for i in $test; do
-    echo "Downloading $i"
-    ls ARCHIVE_BASE_NAME
-    wget $1
-    decompress_and_process $crawl_archive_lz4 $1
+for crawl_archive_lz4 in $CENSUS_LZ4_DATA_PATH/$1/*.tar.lz4
+  do decompress_and_process $crawl_archive_lz4 $1
 done;
-
 
 
