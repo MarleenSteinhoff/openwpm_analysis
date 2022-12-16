@@ -16,7 +16,7 @@ function download(){
   echo "Downloading into $CENSUS_LZ4_DATA_PATH"
   cd $CODE_DIR
   echo "python download_file.py $DWNLD_URL $EXTRACTION_DIR"
-  python download_file.py $DWNLD_URL $EXTRACTION_DIR
+  python download_file.py $1 $EXTRACTION_DIR
 }
 
 function decompress_and_process(){
@@ -53,8 +53,8 @@ FULL_FILE_NAME="$EXTRACTION_DIR/*.lz4"
 
 while IFS= read -r line
 do
-  download
-  decompress_and_process $crawl_archive_lz4 $
+  download $line
+  decompress_and_process $crawl_archive_lz4
   echo "$line"
 
 done < "$DOWNLOAD_URL_PATH"
