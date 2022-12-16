@@ -2,9 +2,9 @@
 #set -e
 
 # Preprocess and analyze compressed crawl databases
-EXTRACTION_DIR="/tmp/census_data_lz4/extractiondir"
+EXTRACTION_DIR="/crawler/census_data_lz4/extractiondir"
 CODE_DIR="/home/fsadmin/analysis/openwpm_analysis"
-CENSUS_LZ4_DATA_PATH="/tmp/census_data_lz4"
+CENSUS_LZ4_DATA_PATH="/crawler/census_data_lz4"
 ROOT_OUT_DIR="/crawler/results"
 
 CENSUS_NORMALIZED_LZ4_DATA_PATH=${ROOT_OUT_DIR}/normalized/
@@ -59,12 +59,12 @@ ARCHIVE_BASE_NAME=$(basename "$1")
   python analyze_crawl.py $EXTRACTION_DIR $ROOT_OUT_DIR
   mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH/$CRAWL_NAME
   OUT_NORMALIZED_ARCHIVE=$EXTRACTION_DIR/$ARCHIVE_BASE_NAME
-  exit
-  pushd .
   cd $EXTRACTION_DIR
   echo "SUCCESS!"
-  echo "Will remove $EXTRACTION_DIR/*201*"
+  echo "Will remove files from $EXTRACTION_DIR and $CENSUS_LZ4_DATA_PATH"
   rm -rf $EXTRACTION_DIR/*201*
+  rm -rf $CENSUS_LZ4_DATA_PATH/*201*
+  
 }
 
 
