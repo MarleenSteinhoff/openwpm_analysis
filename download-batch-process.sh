@@ -23,11 +23,12 @@ function decompress_and_process(){
 echo "Processing downloaded file..."  
 ARCHIVE_BASE_NAME=$(basename "$1")
 FILE_NAME="${ARCHIVE_BASE_NAME%.*}"
+FULL_FILE_NAME="$EXTRACTION_DIR/*.lz4"
   
-  echo "Will extract $1 to $CRAWL_DATA_PATH"
+  echo "Will extract $FULL_FILE_NAME to $CRAWL_DATA_PATH"
   echo "$FILE_NAME"
   cd $EXTRACTION_DIR
-  time lz4 -qdc --no-sparse $1 > $FILE_NAME.sqlite
+  time lz4 -qdc --no-sparse $FULL_FILE_NAME > $FILE_NAME.sqlite
   rm -f *.lz4
   #time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
   echo "File successfully extracted"
@@ -46,7 +47,7 @@ FILE_NAME="${ARCHIVE_BASE_NAME%.*}"
   echo "Will remove files from $EXTRACTION_DIR and $CENSUS_LZ4_DATA_PATH"
   rm -rf $EXTRACTION_DIR/*201*
   rm -rf $CENSUS_LZ4_DATA_PATH/*201*
-  
+  exit
 }
 
 
