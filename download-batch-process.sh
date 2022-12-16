@@ -15,7 +15,6 @@ mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
 function download(){
   echo "Downloading into $CENSUS_LZ4_DATA_PATH"
   cd $CODE_DIR
-  echo "python download_file.py $DWNLD_URL $EXTRACTION_DIR"
   python download_file.py $1 $EXTRACTION_DIR
 }
 

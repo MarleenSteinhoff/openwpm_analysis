@@ -24,7 +24,7 @@ if __name__ == '__main__':
     print(f"Downloading file {url}")
     os.system(f"cd {extraction_dir}")
     r = requests.get(url, auth=(username, password), stream=True)
-    
+    os.system(f"mv .*lz4 {extraction_dir}")
     print(f"request resolved with code {r.status_code}")
 
     print(r.headers)
@@ -47,7 +47,4 @@ if __name__ == '__main__':
         print("error downloading file")
 
 
-
-
-
-    print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
+    print("Download finished in %0.1f mins" % ((time() - t0) / 60))
