@@ -62,6 +62,9 @@ def download_and_manipulate(url, count=0):
 
     os.system(f"lz4 -dc {crawl_dir}/{filename} > {crawl_dir}/{outfile}")
     os.system(f"python analyze_crawl.py {crawl_dir} {out_dir}")
+    # call all other scripts here 
+
+    
     # remove all files from current crawl
     os.system(f"rm -f {crawl_dir}/*")
 
