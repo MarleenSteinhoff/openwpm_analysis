@@ -22,11 +22,10 @@ if __name__ == '__main__':
     password = os.environ.get('PASSWORD')
 
     print(f"Downloading file {url}")
-    os.system(f"cd {extraction_dir}")
+    os.chdir(f"{extraction_dir}")
     r = requests.get(url, auth=(username, password), stream=True)
-    os.system(f"mv .*lz4 {extraction_dir}")
-    print(f"request resolved with code {r.status_code}")
-
+    print(f"Request resolved with code {r.status_code}")
+    
     print(r.headers)
 
     filename = url.rsplit('/',1)[1]

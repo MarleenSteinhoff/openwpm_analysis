@@ -19,14 +19,15 @@ function download(){
 }
 
 function decompress_and_process(){
-echo "Processing downloaded file..."  
+echo "Processing downloaded file..." 
+cd $EXTRACTION_DIR
 ARCHIVE_BASE_NAME=$(basename "$1")
 FILE_NAME="${ARCHIVE_BASE_NAME%.*}"
-FULL_FILE_NAME="$EXTRACTION_DIR/*.lz4"
+FULL_FILE_NAME=${EXTRACTION_DIR/.lz4}
+  
   
   echo "Will extract $FULL_FILE_NAME to $CRAWL_DATA_PATH"
   echo "$FILE_NAME"
-  cd $EXTRACTION_DIR
   time lz4 -qdc --no-sparse $FULL_FILE_NAME > $FILE_NAME.sqlite
   rm -f *.lz4
   #time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
@@ -54,7 +55,6 @@ while IFS= read -r line
 do
 	echo "$line"
   download $line
- exit
   decompress_and_process $crawl_archive_lz4
   echo "$line"
 
