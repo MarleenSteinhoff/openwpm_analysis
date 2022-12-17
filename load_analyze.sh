@@ -25,8 +25,8 @@ function decompress_and_process(){
   FILE_NAME=${LZ4_FILE_NAME%.*} 
 
   echo "Will extract $LZ4_FILE_NAME"
-  
-  time lz4 -qdc --no-sparse $EXTRACTION_DIR/$LZ4_FILE_NAME > "2018.sqlite"
+  time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR 
+  #time lz4 -qdc --no-sparse $EXTRACTION_DIR/$LZ4_FILE_NAME > "2018.sqlite"
   rm -f *.lz4
   echo "-----------------------------------------------------"
   #time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
