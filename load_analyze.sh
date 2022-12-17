@@ -23,7 +23,6 @@ function decompress_and_process(){
   cd $EXTRACTION_DIR 
   LZ4_FILE_NAME=$(find . -name "*lz4")
   FILE_NAME=${LZ4_FILE_NAME%.*} 
-
   echo "Will extract $LZ4_FILE_NAME"
   time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR 
   rm -f *.lz4
