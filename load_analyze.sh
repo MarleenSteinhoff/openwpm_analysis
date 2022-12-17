@@ -26,9 +26,7 @@ function decompress_and_process(){
 
   echo "Will extract $LZ4_FILE_NAME"
   time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR 
-  #time lz4 -qdc --no-sparse $EXTRACTION_DIR/$LZ4_FILE_NAME > "2018.sqlite"
   rm -f *.lz4
-  echo "-----------------------------------------------------"
   #time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
   echo "File successfully extracted"
   #only if crawl is new
@@ -39,10 +37,15 @@ function decompress_and_process(){
   echo "Size after vacuuming"
   ls -hl $EXTRACTION_DIR/*.sqlite
   cd $CODE_DIR
-  echo "------------------------------------------------------"
+}
+
+function process(){
   python analyze_crawl.py $EXTRACTION_DIR $ROOT_OUT_DIR
   mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH/$CRAWL_NAME
   OUT_NORMALIZED_ARCHIVE=$EXTRACTION_DIR/$ARCHIVE_BASE_NAME
+}
+
+function cleanup(){
   cd $EXTRACTION_DIR
   echo "Will remove files from $EXTRACTION_DIR and $CENSUS_LZ4_DATA_PATH"
   rm -rf $EXTRACTION_DIR/*201*
@@ -54,8 +57,10 @@ function decompress_and_process(){
 while IFS= read -r line
 do
   echo "$line"
-  download $line
-  decompress_and_process $crawl_archive_lz4
+  #download $line
+  #decompress_and_process $crawl_archive_lz4
+  process
+  #cleanup
   echo "$line"
 
 done < "$DOWNLOAD_URL_PATH"
