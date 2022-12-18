@@ -280,11 +280,10 @@ class CrawlDBAnalysis(object):
 
 if __name__ == '__main__':
     t0 = time()
-    # crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
+    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
     # crawl_db_check.start_analysis()
-
-    crawl_db_check = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data",
-                                     "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/results")
+    #crawl_db_check = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data",
+    #                                 "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/results")
     crawl_db_check.start_url_list()
 
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
