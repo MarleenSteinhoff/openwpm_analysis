@@ -20,8 +20,6 @@ from db_schema import (HTTP_REQUESTS_TABLE,
 from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
 
-
-
 MIN_CANVAS_TEXT_LEN = 10
 MIN_CANVAS_IMAGE_WIDTH = 16
 MIN_CANVAS_IMAGE_HEIGHT = 16
@@ -51,6 +49,7 @@ def get_canvas_text(arguments):
     except Exception:
         return ""
 
+
 def are_get_image_data_dimensions_too_small(arguments):
     """Check if the retrieved pixel data is larger than min. dimensions."""
     # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
@@ -60,14 +59,13 @@ def are_get_image_data_dimensions_too_small(arguments):
     return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
 
 
-
 def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
                               canvas_banned_calls, canvas_texts):
     canvas_fingerprinters = set()
     for script_address, visit_ids in canvas_reads.items():
         if script_address in canvas_fingerprinters:
             continue
-        canvas_rw_visits = visit_ids.\
+        canvas_rw_visits = visit_ids. \
             intersection(canvas_writes[script_address])
         if not canvas_rw_visits:
             continue
@@ -77,12 +75,12 @@ def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
             # addEventListener of the Canvas API. We exclude scripts making
             # these calls to eliminate false positives
             if canvas_rw_visit in canvas_banned_calls[script_address]:
-                print ("Excluding potential canvas FP script", script_address,
-                       "visit#", canvas_rw_visit,
-                       canvas_texts[(script_address, canvas_rw_visit)])
+                print("Excluding potential canvas FP script", script_address,
+                      "visit#", canvas_rw_visit,
+                      canvas_texts[(script_address, canvas_rw_visit)])
                 continue
             canvas_fingerprinters.add(script_address)
-            #print ("Canvas fingerprinter", script_address, "visit#",
+            # print ("Canvas fingerprinter", script_address, "visit#",
             #       canvas_rw_visit,
             #       canvas_texts[(script_address, canvas_rw_visit)])
             break
@@ -90,12 +88,7 @@ def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
     return canvas_fingerprinters
 
 
-
-
-
 class CrawlDBAnalysis(object):
-
-
 
     def __init__(self, crawl_dir, out_dir):
         self.crawl_dir = get_crawl_dir(crawl_dir)
@@ -121,10 +114,15 @@ class CrawlDBAnalysis(object):
 
         self.no_javascript_calls = -1
         self.no_api_calls = -1
+
         self.no_canvas_fingerprinting = -1
-        self.canvas_fingerprinters = defaultdict(set)
+        self.canvas_fingerprinters = defaultdict()
+
         self.no_canvas_fingerprinters = -1
-        self.canvas_fingerprinters_functions = defaultdict(set)
+        self.no_font_fp_sites = -1
+        self.no_font_fp_thirdparties = -1
+        self.font_fingerprinters = defaultdict(set)
+        self.canvas_fingerprinters_functions = defaultdict()
 
 
     def init_db(self):
@@ -319,25 +317,78 @@ class CrawlDBAnalysis(object):
         cur = self.db_conn.cursor()
         js = pd.read_sql_query(query, self.db_conn)
 
-        self.get_canvas_fingerprinting(js, cur)
+        # self.get_canvas_fingerprinting(js, cur)
+        self.get_font_fingerprinting(js)
 
         javascript_calls = "Number of javascript calls", len(js)
-        # helper columns
+
+    def get_font_fingerprinting(self, js):
+
+        font_shorthand = re.compile(
+            r"^\s*(?=(?:(?:[-a-z]+\s*){0,2}(italic|oblique))?)(?=(?:(?:[-a-z]+\s*){0,2}(small-caps))?)(?=(?:(?:[-a-z]+\s*){0,2}(bold(?:er)?|lighter|[1-9]00))?)(?:(?:normal|\1|\2|\3)\s*){0,3}((?:xx?-)?(?:small|large)|medium|smaller|larger|[.\d]+(?:\%|in|[cem]m|ex|p[ctx]))(?:\s*\/\s*(normal|[.\d]+(?:\%|in|[cem]m|ex|p[ctx])))?\s*([-_\{\}\(\)\&!\',\*\.\"\sa-zA-Z0-9]+?)\s*$")
+
+        # Helper columns
         js['script_ps1'] = js['script_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
         js['top_ps1'] = js['top_level_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
         js['document_ps1'] = js['document_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
 
+        fp = js[
+            (js.symbol == 'CanvasRenderingContext2D.measureText') &
+            (js.script_ps1 != js.top_ps1)]
+
+        scriptprovider_fingerprint = fp.groupby('script_ps1').top_ps1.count().sort_values(ascending=False)
+        tld_fingerprint = fp.groupby('top_ps1').top_ps1.count().sort_values(ascending=False)
+
+        self.no_font_fp_sites = fp['top_ps1'].nunique()
+        self.no_font_fp_thirdparties = fp['script_ps1'].nunique()
+        self.font_fingerprinters = fp.to_dict()
+
+        print(
+            "Scripts for fingerprinting where provided by " + str(self.no_font_fp_thirdparties) + " providers on " + str(self.no_font_fp_sites) + " sites.")
 
 
-    def get_font_fingerprinting(self, js):
-        font_shorthand = re.compile(
-            r"^\s*(?=(?:(?:[-a-z]+\s*){0,2}(italic|oblique))?)(?=(?:(?:[-a-z]+\s*){0,2}(small-caps))?)(?=(?:(?:[-a-z]+\s*){0,2}(bold(?:er)?|lighter|[1-9]00))?)(?:(?:normal|\1|\2|\3)\s*){0,3}((?:xx?-)?(?:small|large)|medium|smaller|larger|[.\d]+(?:\%|in|[cem]m|ex|p[ctx]))(?:\s*\/\s*(normal|[.\d]+(?:\%|in|[cem]m|ex|p[ctx])))?\s*([-_\{\}\(\)\&!\',\*\.\"\sa-zA-Z0-9]+?)\s*$")
 
-        self.no_javascript_calls = js[js.operation == "call"].symbol.value_counts()
+    def get_cookies(self):
+        redirects = pd.read_sql_query("SELECT * FROM javascript_cookies", self.db_conn)
 
-        fingerprints = js[(js.operation == "call") &
-                          (js.symbol == "CanvasRenderingContext2D.fillText")
-                          ].arguments.value_counts().head(10)
+
+        # only count redirections between different PS+1's
+        redirects = redirects[redirects.old_ps1 != redirects.new_ps1]
+
+        # only count a (src-dst) pair once on a website
+        redirects.drop_duplicates(subset=["visit_id", "old_ps1", "new_ps1"], inplace=True)
+
+## not implemented
+    def get_redirection(self, con):
+        # Load the data
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+        redirects = pd.read_sql_query("SELECT old_channel_id, new_channel_id, visit_id FROM http_redirects"
+                                      " WHERE old_channel_id IS NOT NULL AND is_sts_upgrade=0;", con)
+        requests = pd.read_sql_query("SELECT url, channel_id FROM http_requests;", con)
+
+        # build a map of channel_id to request url
+        channel_id_to_url_map = dict(zip(requests.channel_id, requests.url))
+
+        redirects["old_url"] = redirects["old_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
+        redirects["new_url"] = redirects["new_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
+
+        # Eliminate redirections that don't have a corresponding request in the http_requests table
+        redirects = redirects[~redirects.new_url.isnull()]
+
+        redirects['old_ps1'] = redirects['old_url'].apply(du.get_ps_plus_1)
+        redirects['new_ps1'] = redirects['new_url'].apply(du.get_ps_plus_1)
+
+        # only count redirections between different PS+1's
+        redirects = redirects[redirects.old_ps1 != redirects.new_ps1]
+
+        # only count a (src-dst) pair once on a website
+        redirects.drop_duplicates(subset=["visit_id", "old_ps1", "new_ps1"], inplace=True)
+
+        redirects.head()
+
+        redirects.groupby(['old_ps1', 'new_ps1']).size().reset_index(name='# sites'). \
+            sort_values(by=['# sites'], ascending=False)
 
     def get_canvas_fingerprinting(self, js, cur):
 
@@ -375,7 +426,7 @@ class CrawlDBAnalysis(object):
                 canvas_reads[script_url].add(visit_id)
             elif symbol in CANVAS_WRITE_FUNCS:
                 text = get_canvas_text(arguments)
-                
+
                 # Python miscalculates the length of unicode strings that contain
                 # surrogate pairs such as emojis. This make strings look longer
                 # than they really are, and is causing false positives.
@@ -395,10 +446,10 @@ class CrawlDBAnalysis(object):
                 canvas_banned_calls[script_url].add(visit_id)
 
         self.canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
-                                                                  canvas_writes,
-                                                                  canvas_styles,
-                                                                  canvas_banned_calls,
-                                                                  canvas_texts)
+                                                               canvas_writes,
+                                                               canvas_styles,
+                                                               canvas_banned_calls,
+                                                               canvas_texts)
         self.no_canvas_fingerprinters = len(self.canvas_fingerprinters)
 
         # Extract first arguments of function calls as a separate column
@@ -422,7 +473,6 @@ class CrawlDBAnalysis(object):
         sw = int(get_image_data_args["2"])
         sh = int(get_image_data_args["3"])
         return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
-
 
     def get_num_entries_without_visit_id(self, table_name):
         query = "SELECT count(*) FROM %s WHERE visit_id = -1;" % table_name
