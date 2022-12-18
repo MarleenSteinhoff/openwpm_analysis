@@ -1,9 +1,15 @@
 import os
+import json
 import sys
 import sqlite3
+import re
 from time import time
 from os.path import join, basename, sep, isdir
 from collections import defaultdict
+import crawl_utils.domain_utils as du
+import crawl_utils.analysis_utils as au
+import pandas as pd
+
 import util
 from db_schema import (HTTP_REQUESTS_TABLE,
                        HTTP_RESPONSES_TABLE,
@@ -207,6 +213,42 @@ class CrawlDBAnalysis(object):
     def start_url_list(self):
         self.get_urls_list()
         self.dump_urls_list()
+        self.get_fingerprinting()
+
+    def list_for_query(self, list):
+        return str(list)[1:-1]
+
+    def get_fingerprinting(self):
+        js = pd.read_sql_query("SELECT * FROM javascript WHERE visit_id IN (" + self.list_for_query(self.urls) + ")",
+                               self.db_conn)
+
+        # helper columns
+        js['script_ps1'] = js['script_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
+        js['top_ps1'] = js['top_level_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
+        js['document_ps1'] = js['document_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
+
+        # Canvas font fingerprinting
+        font_shorthand = re.compile(
+            r"^\s*(?=(?:(?:[-a-z]+\s*){0,2}(italic|oblique))?)(?=(?:(?:[-a-z]+\s*){0,2}(small-caps))?)(?=(?:(?:[-a-z]+\s*){0,2}(bold(?:er)?|lighter|[1-9]00))?)(?:(?:normal|\1|\2|\3)\s*){0,3}((?:xx?-)?(?:small|large)|medium|smaller|larger|[.\d]+(?:\%|in|[cem]m|ex|p[ctx]))(?:\s*\/\s*(normal|[.\d]+(?:\%|in|[cem]m|ex|p[ctx])))?\s*([-_\{\}\(\)\&!\',\*\.\"\sa-zA-Z0-9]+?)\s*$")
+
+        first = js[js.symbol.str.startswith('CanvasRenderingContext2D')]
+        second = js[(js.symbol == 'CanvasRenderingContext2D.measureText') &
+                    (js.script_ps1 != js.top_ps1)].groupby('script_ps1').top_ps1.count().sort_values(ascending=False)
+        third = js[(js.symbol == 'CanvasRenderingContext2D.measureText') &
+                   (js.script_ps1 != js.top_ps1) &
+                   (js.script_ps1 == 'admicro.vn')
+                   ].arguments.apply(lambda x: json.loads(x)["0"]).unique()
+        fourth = js[
+            (js.symbol == 'CanvasRenderingContext2D.font') &
+            (js.script_ps1 != js.top_ps1) &
+            (js.script_ps1 == 'admicro.vn')
+            ].value.apply(lambda x: re.match(font_shorthand, x).group(6)).unique()
+
+        print("1", first)
+        print("2", second)
+        print("3", third)
+        print("4", fourth)
+        pass
 
     def get_num_entries_without_visit_id(self, table_name):
         query = "SELECT count(*) FROM %s WHERE visit_id = -1;" % table_name
@@ -281,9 +323,10 @@ class CrawlDBAnalysis(object):
 if __name__ == '__main__':
     t0 = time()
     crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
-    # crawl_db_check.start_analysis()
-    #crawl_db_check = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data",
+
+    # crawl_db_check = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data",
     #                                 "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/results")
     crawl_db_check.start_url_list()
 
+    # crawl_db_check.start_analysis()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
