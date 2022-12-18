@@ -1,4 +1,3 @@
-
 import os
 import sys
 import sqlite3
@@ -9,7 +8,7 @@ import util
 from db_schema import (HTTP_REQUESTS_TABLE,
                        HTTP_RESPONSES_TABLE,
                        JAVASCRIPT_TABLE, OPENWPM_TABLES)
-from util import dump_as_json, get_table_and_column_names, get_crawl_dir,\
+from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
 
 
@@ -25,6 +24,7 @@ class CrawlDBAnalysis(object):
         self.out_dir = join(out_dir, "analysis")
         self.init_out_dir()
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
+        self.urls = self.get_urls_list()
         self.sv_num_requests = defaultdict(int)
         self.sv_num_responses = defaultdict(int)
         self.sv_num_javascript = defaultdict(int)
@@ -46,7 +46,7 @@ class CrawlDBAnalysis(object):
 
     def optimize_db(self, size_in_gb=20):
         """ Runs PRAGMA queries to make sqlite better """
-        self.db_conn.execute("PRAGMA cache_size = -%i" % (size_in_gb * 10**6))
+        self.db_conn.execute("PRAGMA cache_size = -%i" % (size_in_gb * 10 ** 6))
         # Store temp tables, indices in memory
         self.db_conn.execute("PRAGMA temp_store = 2")
         # self.db_conn.execute("PRAGMA synchronous = NORMAL;")
@@ -68,6 +68,27 @@ class CrawlDBAnalysis(object):
         print(len(visit_id_site_urls), "mappings")
         print("Distinct site urls", len(set(visit_id_site_urls.values())))
         return visit_id_site_urls
+
+    def get_visit_id_site_url_mapping_selection(self, url_list):
+        visit_id_site_urls = {}
+        not_in_subset = {}
+        # modification: only visit_ids from sites that got crawled in all data sets
+        for visit_id, site_url in self.db_conn.execute(
+                "SELECT visit_id, site_url FROM site_visits"):
+            if site_url in url_list:
+                visit_id_site_urls[visit_id] = site_url
+            else:
+                not_in_subset[visit_id] = site_url
+        print(len(visit_id_site_urls), "mappings")
+        print("Distinct site urls in subset", len(set(visit_id_site_urls.values())))
+        return visit_id_site_urls
+
+    def get_urls_list(self):
+        urls = []
+        for visit_id, site_url in self.db_conn.execute(
+                "SELECT visit_id, site_url FROM site_visits"):
+            urls.append(site_url)
+        return urls
 
     def run_streaming_analysis_for_table(self, table_name):
         current_visit_ids = {}
@@ -154,6 +175,11 @@ class CrawlDBAnalysis(object):
                     num_rows = 0
                 print("Total rows", table_name, num_rows)
 
+    def dump_urls_list(self):
+        # self.dump_json(self.urls, "%s_%s" % ("urls_from", self.crawl_name))
+        print()
+        dump_as_json(self.urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "url_list.json")))
+
     def dump_crawl_data(self, table_name):
         if table_name == HTTP_REQUESTS_TABLE:
             self.dump_json(self.sv_num_requests, "sv_num_requests.json")
@@ -178,6 +204,10 @@ class CrawlDBAnalysis(object):
         self.run_all_streaming_analysis()
         self.dump_entries_without_visit_ids()
 
+    def start_url_list(self):
+        self.get_urls_list()
+        self.dump_urls_list()
+
     def get_num_entries_without_visit_id(self, table_name):
         query = "SELECT count(*) FROM %s WHERE visit_id = -1;" % table_name
         try:
@@ -198,12 +228,12 @@ class CrawlDBAnalysis(object):
 
         self.num_entries[HTTP_RESPONSES_TABLE] = self.get_num_entries(
             HTTP_RESPONSES_TABLE)
-        self.num_entries_without_visit_id[HTTP_RESPONSES_TABLE] =\
+        self.num_entries_without_visit_id[HTTP_RESPONSES_TABLE] = \
             self.get_num_entries_without_visit_id(HTTP_RESPONSES_TABLE)
 
         self.num_entries[JAVASCRIPT_TABLE] = self.get_num_entries(
             JAVASCRIPT_TABLE)
-        self.num_entries_without_visit_id[JAVASCRIPT_TABLE] =\
+        self.num_entries_without_visit_id[JAVASCRIPT_TABLE] = \
             self.get_num_entries_without_visit_id(JAVASCRIPT_TABLE)
 
         self.dump_json(self.num_entries_without_visit_id,
@@ -216,14 +246,14 @@ class CrawlDBAnalysis(object):
         fails = {}  # num. of failed commands grouped by cmd type
         timeouts = {}  # num. of timeouts
         for row in self.db_conn.execute(
-            """SELECT command, count(*)
+                """SELECT command, count(*)
                 FROM crawl_history
                 GROUP BY command;""").fetchall():
             command_counts[row["command"]] = row["count(*)"]
             print("crawl_history Totals", row["command"], row["count(*)"])
 
         for row in self.db_conn.execute(
-            """SELECT command, count(*)
+                """SELECT command, count(*)
                 FROM crawl_history
                 WHERE bool_success = 0
                 GROUP BY command;""").fetchall():
@@ -231,7 +261,7 @@ class CrawlDBAnalysis(object):
             print("crawl_history Fails", row["command"], row["count(*)"])
 
         for row in self.db_conn.execute(
-            """SELECT command, count(*)
+                """SELECT command, count(*)
                 FROM crawl_history
                 WHERE bool_success = -1
                 GROUP BY command;""").fetchall():
@@ -250,6 +280,11 @@ class CrawlDBAnalysis(object):
 
 if __name__ == '__main__':
     t0 = time()
-    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
-    crawl_db_check.start_analysis()
+    # crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
+    # crawl_db_check.start_analysis()
+
+    crawl_db_check = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data",
+                                     "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/results")
+    crawl_db_check.start_url_list()
+
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))

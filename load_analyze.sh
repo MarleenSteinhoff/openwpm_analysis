@@ -15,10 +15,10 @@ mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
 function download(){
   echo "Downloading into $CENSUS_LZ4_DATA_PATH"
   cd $CODE_DIR
-  python3 download_file.py $1 $EXTRACTION_DIR
+  python download_file.py $1 $EXTRACTION_DIR
 }
 
-function decompress_and_process(){
+function decompress(){
   echo "Processing downloaded file..."
   cd $EXTRACTION_DIR 
   LZ4_FILE_NAME=$(find . -name "*lz4")
@@ -35,13 +35,29 @@ function decompress_and_process(){
   time sqlite3 $EXTRACTION_DIR/*.sqlite 'PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; PRAGMA page_size = 32768; VACUUM;'
   echo "Size after vacuuming"
   ls -hl $EXTRACTION_DIR/*.sqlite
-  cd $CODE_DIR
+ 
+}
+
+function prepare_data(){
+  python process_crawl_data
 }
 
 function process(){
+  cd $CODE_DIR
   python analyze_crawl.py $EXTRACTION_DIR $ROOT_OUT_DIR
+}
+
+function zip_result(){
   mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH/$CRAWL_NAME
   OUT_NORMALIZED_ARCHIVE=$EXTRACTION_DIR/$ARCHIVE_BASE_NAME
+  pushd .
+  cd $EXTRACTION_DIR
+  tar c *201* | lz4 -9zq - $OUT_NORMALIZED_ARCHIVE
+  popd
+  scp $OUT_NORMALIZED_ARCHIVE odin://mnt/10tb2/census-release-normalized/$2/
+  rm $OUT_NORMALIZED_ARCHIVE
+  echo "Will remove $EXTRACTION_DIR/*201*"
+  rm -rf $EXTRACTION_DIR/*201*
 }
 
 function cleanup(){
@@ -57,8 +73,10 @@ while IFS= read -r line
 do
   echo "$line"
   #download $line
-  #decompress_and_process $crawl_archive_lz4
+  #decompress
+  #prepare_data
   process
+  #zip_result
   #cleanup
   echo "$line"
 
