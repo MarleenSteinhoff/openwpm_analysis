@@ -2,6 +2,9 @@ import os
 import json
 import sys
 import sqlite3
+
+from numpy import unicode
+from tqdm import tqdm
 import re
 from time import time
 from os.path import join, basename, sep, isdir
@@ -18,7 +21,81 @@ from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
 
 
+
+MIN_CANVAS_TEXT_LEN = 10
+MIN_CANVAS_IMAGE_WIDTH = 16
+MIN_CANVAS_IMAGE_HEIGHT = 16
+CANVAS_READ_FUNCS = [
+    "HTMLCanvasElement.toDataURL",
+    "CanvasRenderingContext2D.getImageData"
+]
+
+CANVAS_WRITE_FUNCS = [
+    "CanvasRenderingContext2D.fillText",
+    "CanvasRenderingContext2D.strokeText"
+]
+
+CANVAS_FP_DO_NOT_CALL_LIST = ["CanvasRenderingContext2D.save",
+                              "CanvasRenderingContext2D.restore",
+                              "HTMLCanvasElement.addEventListener"]
+
+
+def get_canvas_text(arguments):
+    """Return the string that is written onto canvas from function arguments."""
+    if not arguments:
+        return ""
+    canvas_write_args = json.loads(arguments)
+    try:
+        # cast numbers etc. to a unicode string
+        return unicode(canvas_write_args["0"])
+    except Exception:
+        return ""
+
+def are_get_image_data_dimensions_too_small(arguments):
+    """Check if the retrieved pixel data is larger than min. dimensions."""
+    # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
+    get_image_data_args = json.loads(arguments)
+    sw = int(get_image_data_args["2"])
+    sh = int(get_image_data_args["3"])
+    return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
+
+
+
+def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
+                              canvas_banned_calls, canvas_texts):
+    canvas_fingerprinters = set()
+    for script_address, visit_ids in canvas_reads.items():
+        if script_address in canvas_fingerprinters:
+            continue
+        canvas_rw_visits = visit_ids.\
+            intersection(canvas_writes[script_address])
+        if not canvas_rw_visits:
+            continue
+        # we can remove the following, we don't use the style/color condition
+        for canvas_rw_visit in canvas_rw_visits:
+            # check if the script has made a call to save, restore or
+            # addEventListener of the Canvas API. We exclude scripts making
+            # these calls to eliminate false positives
+            if canvas_rw_visit in canvas_banned_calls[script_address]:
+                print ("Excluding potential canvas FP script", script_address,
+                       "visit#", canvas_rw_visit,
+                       canvas_texts[(script_address, canvas_rw_visit)])
+                continue
+            canvas_fingerprinters.add(script_address)
+            #print ("Canvas fingerprinter", script_address, "visit#",
+            #       canvas_rw_visit,
+            #       canvas_texts[(script_address, canvas_rw_visit)])
+            break
+
+    return canvas_fingerprinters
+
+
+
+
+
 class CrawlDBAnalysis(object):
+
+
 
     def __init__(self, crawl_dir, out_dir):
         self.crawl_dir = get_crawl_dir(crawl_dir)
@@ -31,6 +108,7 @@ class CrawlDBAnalysis(object):
         self.init_out_dir()
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
         self.urls = self.get_urls_list()
+        self.selected_visit_ids = self.get_ids_list()
         self.sv_num_requests = defaultdict(int)
         self.sv_num_responses = defaultdict(int)
         self.sv_num_javascript = defaultdict(int)
@@ -40,6 +118,14 @@ class CrawlDBAnalysis(object):
         self.sv_third_parties = defaultdict(set)
         self.tp_to_publishers = defaultdict(set)
         self.rows_without_visit_id = 0
+
+        self.no_javascript_calls = -1
+        self.no_api_calls = -1
+        self.no_canvas_fingerprinting = -1
+        self.canvas_fingerprinters = defaultdict(set)
+        self.no_canvas_fingerprinters = -1
+        self.canvas_fingerprinters_functions = defaultdict(set)
+
 
     def init_db(self):
         self.db_conn = sqlite3.connect(self.crawl_db_path)
@@ -91,10 +177,18 @@ class CrawlDBAnalysis(object):
 
     def get_urls_list(self):
         urls = []
+        visit_id = []
         for visit_id, site_url in self.db_conn.execute(
                 "SELECT visit_id, site_url FROM site_visits"):
             urls.append(site_url)
         return urls
+
+    def get_ids_list(self):
+        visit_id_list = []
+        for visit_id, site_url in self.db_conn.execute(
+                "SELECT visit_id, site_url FROM site_visits"):
+            visit_id_list.append(visit_id)
+        return visit_id_list
 
     def run_streaming_analysis_for_table(self, table_name):
         current_visit_ids = {}
@@ -219,36 +313,116 @@ class CrawlDBAnalysis(object):
         return str(list)[1:-1]
 
     def get_fingerprinting(self):
-        js = pd.read_sql_query("SELECT * FROM javascript WHERE visit_id IN (" + self.list_for_query(self.urls) + ")",
-                               self.db_conn)
 
+        query = "SELECT * FROM javascript WHERE visit_id IN (" + self.list_for_query(self.selected_visit_ids) + ")"
+        self.db_conn.row_factory = sqlite3.Row
+        cur = self.db_conn.cursor()
+        js = pd.read_sql_query(query, self.db_conn)
+
+        self.get_canvas_fingerprinting(js, cur)
+
+        javascript_calls = "Number of javascript calls", len(js)
         # helper columns
         js['script_ps1'] = js['script_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
         js['top_ps1'] = js['top_level_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
         js['document_ps1'] = js['document_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
 
-        # Canvas font fingerprinting
+
+
+    def get_font_fingerprinting(self, js):
         font_shorthand = re.compile(
             r"^\s*(?=(?:(?:[-a-z]+\s*){0,2}(italic|oblique))?)(?=(?:(?:[-a-z]+\s*){0,2}(small-caps))?)(?=(?:(?:[-a-z]+\s*){0,2}(bold(?:er)?|lighter|[1-9]00))?)(?:(?:normal|\1|\2|\3)\s*){0,3}((?:xx?-)?(?:small|large)|medium|smaller|larger|[.\d]+(?:\%|in|[cem]m|ex|p[ctx]))(?:\s*\/\s*(normal|[.\d]+(?:\%|in|[cem]m|ex|p[ctx])))?\s*([-_\{\}\(\)\&!\',\*\.\"\sa-zA-Z0-9]+?)\s*$")
 
-        first = js[js.symbol.str.startswith('CanvasRenderingContext2D')]
-        second = js[(js.symbol == 'CanvasRenderingContext2D.measureText') &
-                    (js.script_ps1 != js.top_ps1)].groupby('script_ps1').top_ps1.count().sort_values(ascending=False)
-        third = js[(js.symbol == 'CanvasRenderingContext2D.measureText') &
-                   (js.script_ps1 != js.top_ps1) &
-                   (js.script_ps1 == 'admicro.vn')
-                   ].arguments.apply(lambda x: json.loads(x)["0"]).unique()
-        fourth = js[
-            (js.symbol == 'CanvasRenderingContext2D.font') &
-            (js.script_ps1 != js.top_ps1) &
-            (js.script_ps1 == 'admicro.vn')
-            ].value.apply(lambda x: re.match(font_shorthand, x).group(6)).unique()
+        self.no_javascript_calls = js[js.operation == "call"].symbol.value_counts()
 
-        print("1", first)
-        print("2", second)
-        print("3", third)
-        print("4", fourth)
-        pass
+        fingerprints = js[(js.operation == "call") &
+                          (js.symbol == "CanvasRenderingContext2D.fillText")
+                          ].arguments.value_counts().head(10)
+
+    def get_canvas_fingerprinting(self, js, cur):
+
+        query = """SELECT sv.site_url, sv.visit_id,
+            js.script_url, js.operation, js.arguments, js.symbol, js.value
+            FROM javascript as js LEFT JOIN site_visits as sv
+            ON sv.visit_id = js.visit_id WHERE
+            js.script_url <> ''
+            """
+
+        canvas_reads = defaultdict(set)
+        canvas_writes = defaultdict(set)
+        canvas_texts = defaultdict(set)
+        canvas_banned_calls = defaultdict(set)
+        canvas_styles = defaultdict(lambda: defaultdict(set))
+
+        for row in tqdm(cur.execute(query)):
+            # visit_id, script_url, operation, arguments, symbol, value = row[0:6]
+            visit_id = row["visit_id"]
+            site_url = row["site_url"]
+            script_url = row["script_url"]
+            operation = row["operation"]
+            arguments = row["arguments"]
+            symbol = row["symbol"]
+            value = row["value"]
+
+            # Exclude relative URLs, data urls, blobs
+            if not (script_url.startswith("http://")
+                    or script_url.startswith("https://")):
+                continue
+            if symbol in CANVAS_READ_FUNCS and operation == "call":
+                if (symbol == "CanvasRenderingContext2D.getImageData" and
+                        are_get_image_data_dimensions_too_small(arguments)):
+                    continue
+                canvas_reads[script_url].add(visit_id)
+            elif symbol in CANVAS_WRITE_FUNCS:
+                text = get_canvas_text(arguments)
+                
+                # Python miscalculates the length of unicode strings that contain
+                # surrogate pairs such as emojis. This make strings look longer
+                # than they really are, and is causing false positives.
+                # For instance length of "🏴󠁧", which is written onto canvas by
+                # Wordpress to check emoji support, is returned as 13.
+                # We ignore non-ascii characters to prevent false positives.
+                # Perhaps a good idea to log such cases to prevent real fingerprinting
+                # scripts to slip in.
+                if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
+                    canvas_writes[script_url].add(visit_id)
+                    # the following is used to debug false positives
+                    canvas_texts[(script_url, visit_id)].add(text)
+            elif symbol == "CanvasRenderingContext2D.fillStyle" and \
+                    operation == "call":
+                canvas_styles[script_url][visit_id].add(value)
+            elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
+                canvas_banned_calls[script_url].add(visit_id)
+
+        self.canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
+                                                                  canvas_writes,
+                                                                  canvas_styles,
+                                                                  canvas_banned_calls,
+                                                                  canvas_texts)
+        self.no_canvas_fingerprinters = len(self.canvas_fingerprinters)
+
+        # Extract first arguments of function calls as a separate column
+        self.canvas_fingerprinters_functions = js["arguments"].map(lambda x: json.loads(x)["0"] if x else "")
+
+    def get_canvas_text(arguments):
+        """Return the string that is written onto canvas from function arguments."""
+        if not arguments:
+            return ""
+        canvas_write_args = json.loads(arguments)
+        try:
+            # cast numbers etc. to a unicode string
+            return unicode(canvas_write_args["0"])
+        except Exception:
+            return ""
+
+    def are_get_image_data_dimensions_too_small(arguments):
+        """Check if the retrieved pixel data is larger than min. dimensions."""
+        # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
+        get_image_data_args = json.loads(arguments)
+        sw = int(get_image_data_args["2"])
+        sh = int(get_image_data_args["3"])
+        return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
+
 
     def get_num_entries_without_visit_id(self, table_name):
         query = "SELECT count(*) FROM %s WHERE visit_id = -1;" % table_name
