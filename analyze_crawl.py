@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import sqlite3
+from sqlite3 import OperationalError
 
 from numpy import unicode
 from tqdm import tqdm
@@ -10,7 +11,6 @@ from time import time
 from os.path import join, basename, sep, isdir
 from collections import defaultdict
 import crawl_utils.domain_utils as du
-import crawl_utils.analysis_utils as au
 import pandas as pd
 
 import util
@@ -294,12 +294,12 @@ class CrawlDBAnalysis(object):
         self.tracking_stats["no_font_sites"] = str(self.no_font_fp_sites)
         self.tracking_stats["no_font_3rdp"] = str(self.no_font_fp_thirdparties)
 
-        dict = self.cookies_perSite.to_dict()
+        #dict = self.cookies_perSite.to_dict()
 
-        dump_as_json(dict, "%s_%s" % (self.crawl_name, "cookies_per_site.json"))
+        #dump_as_json(dict, "%s_%s" % (self.crawl_name, "cookies_per_site.json"))
         dump_as_json(self.urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "visited_urls.json")))
-        dump_as_json(self.tracking_stats, "%s_%s" % (self.crawl_name, "tracking_stats.json"))
-        #dump_as_json(stats, "%s_%s" % (self.crawl_name, "tracking_stats.json"))
+        dump_as_json(self.tracking_stats, join(self.out_dir,"%s_%s" % (self.crawl_name, "tracking_stats.json")))
+
         #dump_as_json(self.canvas_fingerprinters,
         #             join(self.out_dir, "%s_%s" % (self.crawl_name, "canvas_fingerprinters")))
         #dump_as_json(self.font_fingerprinters, join(self.out_dir, "%s_%s" % (self.crawl_name, "font_fingerprinters")))
@@ -385,8 +385,8 @@ class CrawlDBAnalysis(object):
         self.js_session_cookies = self.no_session.size
         self.http_only = js.loc[js['is_http_only'] == 1].size
 
-        self.cookies_perSite = self.no_session.groupby(['raw_host']).size().reset_index(name='# sites'). \
-            sort_values(by=['# sites'], ascending=False)
+        #self.cookies_perSite = self.no_session.groupby(['raw_host']).size().reset_index(name='# sites'). \
+        #    sort_values(by=['# sites'], ascending=False)
 
     ## not implemented
     def get_redirection(self, con):
@@ -500,6 +500,7 @@ class CrawlDBAnalysis(object):
         """Check if the retrieved pixel data is larger than min. dimensions."""
         # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
         get_image_data_args = json.loads(arguments)
+
         sw = int(get_image_data_args["2"])
         sh = int(get_image_data_args["3"])
         return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
@@ -541,37 +542,40 @@ class CrawlDBAnalysis(object):
         command_counts = {}  # num. of total commands by type
         fails = {}  # num. of failed commands grouped by cmd type
         timeouts = {}  # num. of timeouts
-        for row in self.db_conn.execute(
-                """SELECT command, count(*)
-                FROM crawl_history
-                GROUP BY command;""").fetchall():
-            command_counts[row["command"]] = row["count(*)"]
-            print("crawl_history Totals", row["command"], row["count(*)"])
+        try:
+            for row in self.db_conn.execute(
+                    """SELECT command, count(*)
+                    FROM crawl_history
+                    GROUP BY command;""").fetchall():
+                command_counts[row["command"]] = row["count(*)"]
+                print("crawl_history Totals", row["command"], row["count(*)"])
 
-        for row in self.db_conn.execute(
-                """SELECT command, count(*)
-                FROM crawl_history
-                WHERE bool_success = 0
-                GROUP BY command;""").fetchall():
-            fails[row["command"]] = row["count(*)"]
-            print("crawl_history Fails", row["command"], row["count(*)"])
+            for row in self.db_conn.execute(
+                    """SELECT command, count(*)
+                    FROM crawl_history
+                    WHERE bool_success = 0
+                    GROUP BY command;""").fetchall():
+                fails[row["command"]] = row["count(*)"]
+                print("crawl_history Fails", row["command"], row["count(*)"])
 
-        for row in self.db_conn.execute(
-                """SELECT command, count(*)
-                FROM crawl_history
-                WHERE bool_success = -1
-                GROUP BY command;""").fetchall():
-            timeouts[row["command"]] = row["count(*)"]
-            print("crawl_history Timeouts", row["command"], row["count(*)"])
+            for row in self.db_conn.execute(
+                    """SELECT command, count(*)
+                    FROM crawl_history
+                    WHERE bool_success = -1
+                    GROUP BY command;""").fetchall():
+                timeouts[row["command"]] = row["count(*)"]
+                print("crawl_history Timeouts", row["command"], row["count(*)"])
 
-        for command in list(command_counts.keys()):
-            self.command_fail_rate[command] = (fails.get(command, 0) /
-                                               command_counts[command])
-            self.command_timeout_rate[command] = (timeouts.get(command, 0) /
-                                                  command_counts[command])
-            self.dump_json(self.command_fail_rate, "command_fail_rate.json")
-            self.dump_json(self.command_timeout_rate,
-                           "command_timeout_rate.json")
+            for command in list(command_counts.keys()):
+                self.command_fail_rate[command] = (fails.get(command, 0) /
+                                                   command_counts[command])
+                self.command_timeout_rate[command] = (timeouts.get(command, 0) /
+                                                      command_counts[command])
+                self.dump_json(self.command_fail_rate, "command_fail_rate.json")
+                self.dump_json(self.command_timeout_rate,
+                               "command_timeout_rate.json")
+        except sqlite3.OperationalError:
+            pass
 
 
 if __name__ == '__main__':
@@ -582,5 +586,11 @@ if __name__ == '__main__':
     #                                 "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/results")
     crawl_db_check.start_url_list()
 
-    # crawl_db_check.start_analysis()
+    try:
+        crawl_db_check.start_analysis()
+    except OperationalError:
+        print("OperationalError DB")
+        print(Exception.with_traceback())
+        pass
+
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
