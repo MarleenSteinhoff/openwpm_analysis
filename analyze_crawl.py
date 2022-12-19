@@ -91,6 +91,7 @@ def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
 class CrawlDBAnalysis(object):
 
     def __init__(self, crawl_dir, out_dir):
+
         self.crawl_dir = get_crawl_dir(crawl_dir)
         self.crawl_name = basename(crawl_dir.rstrip(sep))
         self.crawl_db_path = get_crawl_db_path(self.crawl_dir)
@@ -107,6 +108,7 @@ class CrawlDBAnalysis(object):
         self.sv_num_javascript = defaultdict(int)
         self.sv_num_third_parties = defaultdict(int)
         self.num_entries_without_visit_id = defaultdict(int)
+        self.tracking_stats = defaultdict(int)
         self.num_entries = defaultdict(int)
         self.sv_third_parties = defaultdict(set)
         self.tp_to_publishers = defaultdict(set)
@@ -114,7 +116,7 @@ class CrawlDBAnalysis(object):
 
         self.no_javascript_calls = -1
         self.no_api_calls = -1
-
+        self.no_session = -1
         self.no_canvas_fingerprinting = -1
         self.canvas_fingerprinters = defaultdict()
 
@@ -124,6 +126,12 @@ class CrawlDBAnalysis(object):
         self.font_fingerprinters = defaultdict(set)
         self.canvas_fingerprinters_functions = defaultdict()
 
+        self.http_only = -1
+        self.js_session_cookies = -1
+
+        self.no_cookies = -1
+        self.no_sites_with_cookies = -1
+        self.cookies_perSite = defaultdict()
 
     def init_db(self):
         self.db_conn = sqlite3.connect(self.crawl_db_path)
@@ -175,7 +183,6 @@ class CrawlDBAnalysis(object):
 
     def get_urls_list(self):
         urls = []
-        visit_id = []
         for visit_id, site_url in self.db_conn.execute(
                 "SELECT visit_id, site_url FROM site_visits"):
             urls.append(site_url)
@@ -274,9 +281,28 @@ class CrawlDBAnalysis(object):
                 print("Total rows", table_name, num_rows)
 
     def dump_urls_list(self):
-        # self.dump_json(self.urls, "%s_%s" % ("urls_from", self.crawl_name))
-        print()
-        dump_as_json(self.urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "url_list.json")))
+
+        self.tracking_stats["javascript_calls"] = str(self.no_javascript_calls)
+        self.tracking_stats["javascript_cookies_total"] = str(self.no_cookies)
+        self.tracking_stats["no_sites_with_cookies"] = str(self.no_sites_with_cookies)
+        self.tracking_stats["no_javascript_calls"] = str(self.no_javascript_calls)
+        self.tracking_stats["no_api_calls"] = str(self.no_api_calls)
+        self.tracking_stats["no_http_only"] = str(self.http_only)
+        self.tracking_stats["is_session"] = str(self.js_session_cookies)
+        self.tracking_stats["no_canvas_attempts"] = str(self.no_canvas_fingerprinting)
+        self.tracking_stats["no_canvas_sites"] = str(self.no_canvas_fingerprinters)
+        self.tracking_stats["no_font_sites"] = str(self.no_font_fp_sites)
+        self.tracking_stats["no_font_3rdp"] = str(self.no_font_fp_thirdparties)
+
+        dict = self.cookies_perSite.to_dict()
+
+        dump_as_json(dict, "%s_%s" % (self.crawl_name, "cookies_per_site.json"))
+        dump_as_json(self.urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "visited_urls.json")))
+        dump_as_json(self.tracking_stats, "%s_%s" % (self.crawl_name, "tracking_stats.json"))
+        #dump_as_json(stats, "%s_%s" % (self.crawl_name, "tracking_stats.json"))
+        #dump_as_json(self.canvas_fingerprinters,
+        #             join(self.out_dir, "%s_%s" % (self.crawl_name, "canvas_fingerprinters")))
+        #dump_as_json(self.font_fingerprinters, join(self.out_dir, "%s_%s" % (self.crawl_name, "font_fingerprinters")))
 
     def dump_crawl_data(self, table_name):
         if table_name == HTTP_REQUESTS_TABLE:
@@ -304,8 +330,9 @@ class CrawlDBAnalysis(object):
 
     def start_url_list(self):
         self.get_urls_list()
-        self.dump_urls_list()
         self.get_fingerprinting()
+        self.get_cookies()
+        self.dump_urls_list()
 
     def list_for_query(self, list):
         return str(list)[1:-1]
@@ -317,10 +344,9 @@ class CrawlDBAnalysis(object):
         cur = self.db_conn.cursor()
         js = pd.read_sql_query(query, self.db_conn)
 
-        # self.get_canvas_fingerprinting(js, cur)
+        self.get_canvas_fingerprinting(js)
         self.get_font_fingerprinting(js)
-
-        javascript_calls = "Number of javascript calls", len(js)
+        self.no_javascript_calls = len(js)
 
     def get_font_fingerprinting(self, js):
 
@@ -344,21 +370,25 @@ class CrawlDBAnalysis(object):
         self.font_fingerprinters = fp.to_dict()
 
         print(
-            "Scripts for fingerprinting where provided by " + str(self.no_font_fp_thirdparties) + " providers on " + str(self.no_font_fp_sites) + " sites.")
-
-
+            "Scripts for fingerprinting where provided by " + str(
+                self.no_font_fp_thirdparties) + " providers on " + str(self.no_font_fp_sites) + " sites.")
 
     def get_cookies(self):
-        redirects = pd.read_sql_query("SELECT * FROM javascript_cookies", self.db_conn)
+        self.db_conn.row_factory = sqlite3.Row
+        js = pd.read_sql_query(
+            "SELECT * FROM javascript_cookies;",
+            self.db_conn)
 
+        self.no_cookies = js.size
+        self.no_sites_with_cookies = js['visit_id'].size
+        self.no_session = js.loc[js['is_session'] == 1]
+        self.js_session_cookies = self.no_session.size
+        self.http_only = js.loc[js['is_http_only'] == 1].size
 
-        # only count redirections between different PS+1's
-        redirects = redirects[redirects.old_ps1 != redirects.new_ps1]
+        self.cookies_perSite = self.no_session.groupby(['raw_host']).size().reset_index(name='# sites'). \
+            sort_values(by=['# sites'], ascending=False)
 
-        # only count a (src-dst) pair once on a website
-        redirects.drop_duplicates(subset=["visit_id", "old_ps1", "new_ps1"], inplace=True)
-
-## not implemented
+    ## not implemented
     def get_redirection(self, con):
         # Load the data
         con.row_factory = sqlite3.Row
@@ -390,8 +420,8 @@ class CrawlDBAnalysis(object):
         redirects.groupby(['old_ps1', 'new_ps1']).size().reset_index(name='# sites'). \
             sort_values(by=['# sites'], ascending=False)
 
-    def get_canvas_fingerprinting(self, js, cur):
-
+    def get_canvas_fingerprinting(self, js):
+        cur = self.db_conn.cursor()
         query = """SELECT sv.site_url, sv.visit_id,
             js.script_url, js.operation, js.arguments, js.symbol, js.value
             FROM javascript as js LEFT JOIN site_visits as sv
