@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import sqlite3
+import traceback
 from sqlite3 import OperationalError
 
 from numpy import unicode
@@ -198,6 +199,7 @@ class CrawlDBAnalysis(object):
     def run_streaming_analysis_for_table(self, table_name):
         current_visit_ids = {}
         processed = 0
+        print(table_name)
         cols_to_select = ["visit_id", "crawl_id"]
         print("Will analyze %s" % table_name)
         if table_name == HTTP_REQUESTS_TABLE:
@@ -582,15 +584,9 @@ if __name__ == '__main__':
     t0 = time()
     crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
 
-    # crawl_db_check = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data",
-    #                                 "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/results")
+    crawl_db_check.start_analysis()
     crawl_db_check.start_url_list()
 
-    try:
-        crawl_db_check.start_analysis()
-    except OperationalError:
-        print("OperationalError DB")
-        print(Exception.with_traceback())
-        pass
+
 
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
