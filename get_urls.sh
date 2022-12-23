@@ -74,7 +74,6 @@ function decompress_and_process(){
 }
 
 
-
 for i in "${urls1[@]}"
 do echo "$i"
 do download "$i"
