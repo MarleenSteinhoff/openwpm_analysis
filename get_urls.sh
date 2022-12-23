@@ -8,9 +8,6 @@ BASE_PATH_HS="/home/mfuchs"
 BASE_PATH_FS="/crawler"
 CENSUS_LZ4_PATH="/census_data_lz4"
 ROOT_OUT_DIR= $CENSUS_LZ4_DATA_PATH/analysis/results
-CENSUS_NORMALIZED_LZ4_DATA_PATH=${ROOT_OUT_DIR}/normalized/
-mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
-
 
 
 while getopts h:f: flag
