@@ -45,12 +45,6 @@ function decompress_and_process(){
   CRAWL_DATA_PATH=$EXTRACTION_DIR/$CRAWL_NAME
   echo "Will extract $1 to $CRAWL_DATA_PATH"
   time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
-  python process_crawl_data.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
-  echo "Size before vacuuming"
-  ls -hl $EXTRACTION_DIR/*201*/201*.sqlite
-  time sqlite3 $EXTRACTION_DIR/*201*/*201*.sqlite 'PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; PRAGMA page_size = 32768; VACUUM;'
-  echo "Size after vacuuming"
-  ls -hl $EXTRACTION_DIR/*201*/*201*.sqlite
   echo "Start getting urls"
   echo "python process_crawl_data.py $CRAWL_DATA_PATH $ROOT_OUT_DIR"
   python process_crawl_data.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
