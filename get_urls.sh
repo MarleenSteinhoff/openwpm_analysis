@@ -6,9 +6,8 @@ EXTRACTION_DIR="/tmp/census_tmp"
 
 BASE_PATH_HS="/home/mfuchs"
 BASE_PATH_FS="/crawler"
-CENSUS_LZ4_PATH="/census_data_lz4"
-ROOT_OUT_DIR= $CENSUS_LZ4_DATA_PATH/analysis/results
-
+CENSUS_LZ4_PATH="/analysis/census_data_lz4"
+CENSUS_LZ4_DATA_PATH=""
 
 while getopts h:f: flag
 do
@@ -17,6 +16,7 @@ do
         f) $CENSUS_LZ4_DATA_PATH=$BASE_PATH_FS/$CENSUS_LZ4_PATH;;
     esac
 done
+ROOT_OUT_DIR= $CENSUS_LZ4_DATA_PATH
 
 echo "Ex Dir $EXTRACTION_DIR"
 echo "CENSUS LZ4 PATH $CENSUS_LZ4_DATA_PATH"
