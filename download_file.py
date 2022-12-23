@@ -2,12 +2,11 @@ import requests as re
 from time import time
 import requests
 import os
+from os.path import exists
 from urllib.parse import urlparse
 import sys
 from dotenv import load_dotenv 
 from clint.textui import progress
-
-
 
 
 
@@ -23,12 +22,15 @@ if __name__ == '__main__':
 
     print(f"Downloading file {url}")
     os.chdir(f"{extraction_dir}")
-    r = requests.get(url, auth=(username, password), stream=True)
-    print(f"Request resolved with code {r.status_code}")
-    
-    print(r.headers)
-
     filename = url.rsplit('/',1)[1]
+    file_exists = exists(extraction_dir/filename)
+    if file_exists:
+        print("file exists. Skip download")
+    else:  
+        r = requests.get(url, auth=(username, password), stream=True)
+        print(f"Request resolved with code {r.status_code}")
+        print(r.headers)
+ 
     
   
     if r.status_code == 200:
@@ -43,7 +45,7 @@ if __name__ == '__main__':
                     out.flush()
         
     else:
-        print("error downloading file")
+        print("error downloading file, status code == ", r.status_code)
 
 
     print("Download finished in %0.1f mins" % ((time() - t0) / 60))

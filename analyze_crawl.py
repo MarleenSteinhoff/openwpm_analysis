@@ -111,7 +111,8 @@ class CrawlDBAnalysis(object):
         print("visit_id_site_urls")
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
         print("urls")
-        self.urls = []
+        self.suc_urls = defaultdict()
+        self.num_suc_urls = defaultdict()
         print("selected visit ids")
         self.selected_visit_ids = self.get_ids_list()
         print("sv num request")
@@ -181,10 +182,10 @@ class CrawlDBAnalysis(object):
 
     def get_visit_id_http_status_mapping(self):
         visit_id_http_status = {}
-        for visit_id, http_status in self.db_conn.execute(
+        for visit_id, response_status in self.db_conn.execute(
                 "SELECT visit_id, response_status FROM http_responses"):
-            if http_status == 200:
-                visit_id_http_status[visit_id] = http_status
+            if response_status == 200:
+                visit_id_http_status[visit_id] = response_status
             else:
                 continue
 
@@ -224,18 +225,22 @@ class CrawlDBAnalysis(object):
 
     def get_url_eff(self):
         t0 = time()
-
         url_dict = self.get_visit_id_site_url_mapping()
-        i = url_dict.keys()
         url = pd.DataFrame(list(url_dict.items()), columns=['visit_id', "site_url"], index=url_dict.keys())
 
         http_dict = self.get_visit_id_http_status_mapping()
-        http = pd.DataFrame(list(http_dict.items()), columns=['visit_id', 'http_status'], index=http_dict.keys())
-
         result = url.loc[url['visit_id'].isin(http_dict.keys())]
-        print("Result: ", len(result.index))
-        print("Expected: ", len(http_dict))
-        print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
+
+        self.suc_urls = result['site_url'].tolist()
+        self.num_suc_urls = len(result.index)
+
+        print("Get_url_eff finished in %0.1f mins" % ((time() - t0) / 60))
+        print("No urls: ", self.num_suc_urls)
+        dump_as_json(self.suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "suc_urls.json")))
+        dump_as_json(self.num_suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "num_suc_urls.json")))
+
+
+
 
     def get_urls(self):
         t0 = time()
@@ -259,12 +264,12 @@ class CrawlDBAnalysis(object):
                 urls[visit_id] = visit_id
                 urls[site_url] = site_url
             pass
-        dump_as_json(urls_list, join(self.out_dir, "%s_%s" % (self.crawl_name, "successfully_crawled.json")))
-        print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
+
+        print("Get_url finished in %0.1f mins" % ((time() - t0) / 60))
         num_rows = self.db_conn.execute(
-            "SELECT COUNT(*) FROM %s WHERE http_status == 200;" % table_name).fetchone()[0]
-        print("Goal: " + num_rows)
-        print("Query_result: " + len(urls_list))
+            "SELECT COUNT(*) FROM %s WHERE response_status == 200;" % table_name).fetchone()[0]
+        print("Goal: ", num_rows)
+        print("Query_result: ", len(urls_list))
 
     def run_streaming_analysis_for_table(self, table_name):
         current_visit_ids = {}
@@ -366,15 +371,8 @@ class CrawlDBAnalysis(object):
         self.tracking_stats["no_font_sites"] = str(self.no_font_fp_sites)
         self.tracking_stats["no_font_3rdp"] = str(self.no_font_fp_thirdparties)
 
-        # dict = self.cookies_perSite.to_dict()
 
-        # dump_as_json(dict, "%s_%s" % (self.crawl_name, "cookies_per_site.json"))
-        dump_as_json(self.urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "visited_urls.json")))
         dump_as_json(self.tracking_stats, join(self.out_dir, "%s_%s" % (self.crawl_name, "tracking_stats.json")))
-
-        # dump_as_json(self.canvas_fingerprinters,
-        #             join(self.out_dir, "%s_%s" % (self.crawl_name, "canvas_fingerprinters")))
-        # dump_as_json(self.font_fingerprinters, join(self.out_dir, "%s_%s" % (self.crawl_name, "font_fingerprinters")))
 
     def dump_crawl_data(self, table_name):
         if table_name == HTTP_REQUESTS_TABLE:
@@ -440,7 +438,7 @@ class CrawlDBAnalysis(object):
 
         self.no_font_fp_sites = fp['top_ps1'].nunique()
         self.no_font_fp_thirdparties = fp['script_ps1'].nunique()
-        self.font_fingerprinters = fp.to_dict()
+
 
         print(
             "Scripts for fingerprinting where provided by " + str(
@@ -653,24 +651,6 @@ class CrawlDBAnalysis(object):
 
 if __name__ == '__main__':
     t0 = time()
-
-    crawl_db_check = CrawlDBAnalysis("/crawler/url/2015-12_1m_stateless/", "/crawler/results/")
-    # cd = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data/crawldir2022", "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data/results")
-    # crawl_db_check.get_urls_fast('200')
+    crawl_db_check = CrawlDBAnalysis("/crawler/url/2015-12_1m_stateless/", "/crawler/results")
     crawl_db_check.get_url_eff()
-    # crawl_db_check.get_urls()
-    # crawl_db_check.start_analysis()
-    # crawl_db_check.get_urls_list()
-
-    """""
-     
-    crawl_db_check.get_urls_list()
-
-    if sys.argv[1] == "urls":
-        crawl_db_check.get_urls_list()
-    else:
-        crawl_db_check.start_analysis()
-        crawl_db_check.start_fingerprinting_analysis()
-        crawl_db_check.start_cookies_analysis()
-"""""
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
