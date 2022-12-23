@@ -4,8 +4,7 @@ import sys
 import sqlite3
 import traceback
 from sqlite3 import OperationalError
-
-from numpy import unicode
+import unicodedata as unicode
 from tqdm import tqdm
 import re
 from time import time
@@ -16,7 +15,7 @@ import pandas as pd
 
 import util
 from db_schema import (HTTP_REQUESTS_TABLE,
-                       HTTP_RESPONSES_TABLE,
+                       HTTP_RESPONSES_TABLE, SITE_VISITS_TABLE,
                        JAVASCRIPT_TABLE, OPENWPM_TABLES)
 from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
@@ -92,27 +91,48 @@ def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
 class CrawlDBAnalysis(object):
 
     def __init__(self, crawl_dir, out_dir):
-
+        print("init")
+        print("crawl dir")
         self.crawl_dir = get_crawl_dir(crawl_dir)
+        print("crawl name")
         self.crawl_name = basename(crawl_dir.rstrip(sep))
+        print("crawl path")
         self.crawl_db_path = get_crawl_db_path(self.crawl_dir)
+        print("command fail rate")
         self.command_fail_rate = {}
+        print("cmd timeout")
         self.command_timeout_rate = {}
+        print("init db")
         self.init_db()
+        print("out dir")
         self.out_dir = join(out_dir, "analysis")
+        print("init out dir")
         self.init_out_dir()
+        print("visit_id_site_urls")
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
-        self.urls = self.get_urls_list()
+        print("urls")
+        self.urls = []
+        print("selected visit ids")
         self.selected_visit_ids = self.get_ids_list()
+        print("sv num request")
         self.sv_num_requests = defaultdict(int)
+        print("sv num responses")
         self.sv_num_responses = defaultdict(int)
+        print("sn num javascript")
         self.sv_num_javascript = defaultdict(int)
+        print("sn num third parties")
         self.sv_num_third_parties = defaultdict(int)
+        print("num entries withoud visit id")
         self.num_entries_without_visit_id = defaultdict(int)
+        print("trackig stats")
         self.tracking_stats = defaultdict(int)
+        print("num entries")
         self.num_entries = defaultdict(int)
+        print("sv_third parties")
         self.sv_third_parties = defaultdict(set)
+        print("tp_to_publishers")
         self.tp_to_publishers = defaultdict(set)
+        print("rows without visit id")
         self.rows_without_visit_id = 0
 
         self.no_javascript_calls = -1
@@ -159,6 +179,19 @@ class CrawlDBAnalysis(object):
         self.run_streaming_analysis_for_table(HTTP_RESPONSES_TABLE)
         self.run_streaming_analysis_for_table(JAVASCRIPT_TABLE)
 
+    def get_visit_id_http_status_mapping(self):
+        visit_id_http_status = {}
+        for visit_id, http_status in self.db_conn.execute(
+                "SELECT visit_id, response_status FROM http_responses"):
+            if http_status == 200:
+                visit_id_http_status[visit_id] = http_status
+            else:
+                continue
+
+        print(len(visit_id_http_status), "mappings")
+        print("Distinct site urls", len(set(visit_id_http_status.values())))
+        return visit_id_http_status
+
     def get_visit_id_site_url_mapping(self):
         visit_id_site_urls = {}
         for visit_id, site_url in self.db_conn.execute(
@@ -168,26 +201,19 @@ class CrawlDBAnalysis(object):
         print("Distinct site urls", len(set(visit_id_site_urls.values())))
         return visit_id_site_urls
 
-    def get_visit_id_site_url_mapping_selection(self, url_list):
-        visit_id_site_urls = {}
-        not_in_subset = {}
-        # modification: only visit_ids from sites that got crawled in all data sets
-        for visit_id, site_url in self.db_conn.execute(
-                "SELECT visit_id, site_url FROM site_visits"):
-            if site_url in url_list:
-                visit_id_site_urls[visit_id] = site_url
-            else:
-                not_in_subset[visit_id] = site_url
-        print(len(visit_id_site_urls), "mappings")
-        print("Distinct site urls in subset", len(set(visit_id_site_urls.values())))
-        return visit_id_site_urls
+    def load_urls(self):
 
-    def get_urls_list(self):
-        urls = []
-        for visit_id, site_url in self.db_conn.execute(
-                "SELECT visit_id, site_url FROM site_visits"):
-            urls.append(site_url)
-        return urls
+        # Opening JSON file
+        f = open('data/results/analysis/crawldir2022_successfully_crawled.json', )
+        # a dictionary
+        data = json.load(f)
+
+        df = []
+        # Iterating through the json
+        # list
+        for url in data:
+            df.append(url)
+        return df
 
     def get_ids_list(self):
         visit_id_list = []
@@ -195,6 +221,50 @@ class CrawlDBAnalysis(object):
                 "SELECT visit_id, site_url FROM site_visits"):
             visit_id_list.append(visit_id)
         return visit_id_list
+
+    def get_url_eff(self):
+        t0 = time()
+
+        url_dict = self.get_visit_id_site_url_mapping()
+        i = url_dict.keys()
+        url = pd.DataFrame(list(url_dict.items()), columns=['visit_id', "site_url"], index=url_dict.keys())
+
+        http_dict = self.get_visit_id_http_status_mapping()
+        http = pd.DataFrame(list(http_dict.items()), columns=['visit_id', 'http_status'], index=http_dict.keys())
+
+        result = url.loc[url['visit_id'].isin(http_dict.keys())]
+        print("Result: ", len(result.index))
+        print("Expected: ", len(http_dict))
+        print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
+
+    def get_urls(self):
+        t0 = time()
+        table_name = HTTP_RESPONSES_TABLE
+        cols_to_select = ["visit_id", "response_status"]
+        query = "SELECT %s FROM %s" % (",".join(cols_to_select), table_name)
+        urls = {}
+        urls_list = []
+        for row in self.db_conn.execute(query):
+            visit_id = int(row["visit_id"])
+            response_status = int(row['response_status'])
+            if visit_id == -1:  # delete later! not both!
+                continue
+            if response_status != 200:
+                continue
+            # id is not -1 and response_status == 200
+            else:
+                site_url = self.visit_id_site_urls[visit_id]
+                urls_list.append(site_url)
+
+                urls[visit_id] = visit_id
+                urls[site_url] = site_url
+            pass
+        dump_as_json(urls_list, join(self.out_dir, "%s_%s" % (self.crawl_name, "successfully_crawled.json")))
+        print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
+        num_rows = self.db_conn.execute(
+            "SELECT COUNT(*) FROM %s WHERE http_status == 200;" % table_name).fetchone()[0]
+        print("Goal: " + num_rows)
+        print("Query_result: " + len(urls_list))
 
     def run_streaming_analysis_for_table(self, table_name):
         current_visit_ids = {}
@@ -296,15 +366,15 @@ class CrawlDBAnalysis(object):
         self.tracking_stats["no_font_sites"] = str(self.no_font_fp_sites)
         self.tracking_stats["no_font_3rdp"] = str(self.no_font_fp_thirdparties)
 
-        #dict = self.cookies_perSite.to_dict()
+        # dict = self.cookies_perSite.to_dict()
 
-        #dump_as_json(dict, "%s_%s" % (self.crawl_name, "cookies_per_site.json"))
+        # dump_as_json(dict, "%s_%s" % (self.crawl_name, "cookies_per_site.json"))
         dump_as_json(self.urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "visited_urls.json")))
-        dump_as_json(self.tracking_stats, join(self.out_dir,"%s_%s" % (self.crawl_name, "tracking_stats.json")))
+        dump_as_json(self.tracking_stats, join(self.out_dir, "%s_%s" % (self.crawl_name, "tracking_stats.json")))
 
-        #dump_as_json(self.canvas_fingerprinters,
+        # dump_as_json(self.canvas_fingerprinters,
         #             join(self.out_dir, "%s_%s" % (self.crawl_name, "canvas_fingerprinters")))
-        #dump_as_json(self.font_fingerprinters, join(self.out_dir, "%s_%s" % (self.crawl_name, "font_fingerprinters")))
+        # dump_as_json(self.font_fingerprinters, join(self.out_dir, "%s_%s" % (self.crawl_name, "font_fingerprinters")))
 
     def dump_crawl_data(self, table_name):
         if table_name == HTTP_REQUESTS_TABLE:
@@ -330,25 +400,26 @@ class CrawlDBAnalysis(object):
         self.run_all_streaming_analysis()
         self.dump_entries_without_visit_ids()
 
-    def start_url_list(self):
-        self.get_urls_list()
-        self.get_fingerprinting()
-        self.get_cookies()
-        self.dump_urls_list()
+    def start_fingerprinting_analysis(self):
 
-    def list_for_query(self, list):
-        return str(list)[1:-1]
-
-    def get_fingerprinting(self):
-
-        query = "SELECT * FROM javascript WHERE visit_id IN (" + self.list_for_query(self.selected_visit_ids) + ")"
-        self.db_conn.row_factory = sqlite3.Row
-        cur = self.db_conn.cursor()
-        js = pd.read_sql_query(query, self.db_conn)
+        # query = "SELECT * FROM javascript WHERE visit_id IN (" + self.list_for_query(self.selected_visit_ids) + ")"
+        # self.db_conn.row_factory = sqlite3.Row
+        # cur = self.db_conn.cursor()
+        js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
+        # js = pd.read_sql_query(query, self.db_conn)
 
         self.get_canvas_fingerprinting(js)
         self.get_font_fingerprinting(js)
         self.no_javascript_calls = len(js)
+
+    def start_cookies_analysis(self):
+        self.get_cookies()
+
+    def dump_results(self):
+        self.dump_urls_list()
+
+    def list_for_query(self, list):
+        return str(list)[1:-1]
 
     def get_font_fingerprinting(self, js):
 
@@ -387,7 +458,7 @@ class CrawlDBAnalysis(object):
         self.js_session_cookies = self.no_session.size
         self.http_only = js.loc[js['is_http_only'] == 1].size
 
-        #self.cookies_perSite = self.no_session.groupby(['raw_host']).size().reset_index(name='# sites'). \
+        # self.cookies_perSite = self.no_session.groupby(['raw_host']).size().reset_index(name='# sites'). \
         #    sort_values(by=['# sites'], ascending=False)
 
     ## not implemented
@@ -582,11 +653,24 @@ class CrawlDBAnalysis(object):
 
 if __name__ == '__main__':
     t0 = time()
-    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
 
-    crawl_db_check.start_analysis()
-    crawl_db_check.start_url_list()
+    crawl_db_check = CrawlDBAnalysis("/crawler/url/2015-12_1m_stateless/", "/crawler/results/")
+    # cd = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data/crawldir2022", "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data/results")
+    # crawl_db_check.get_urls_fast('200')
+    crawl_db_check.get_url_eff()
+    # crawl_db_check.get_urls()
+    # crawl_db_check.start_analysis()
+    # crawl_db_check.get_urls_list()
 
+    """""
+     
+    crawl_db_check.get_urls_list()
 
-
+    if sys.argv[1] == "urls":
+        crawl_db_check.get_urls_list()
+    else:
+        crawl_db_check.start_analysis()
+        crawl_db_check.start_fingerprinting_analysis()
+        crawl_db_check.start_cookies_analysis()
+"""""
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
