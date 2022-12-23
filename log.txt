@@ -1,0 +1,4 @@
+Ex Dir /tmp/census_tmp
+CENSUS LZ4 PATH 
+Root out /analysis/results
+CENSUS normalized 

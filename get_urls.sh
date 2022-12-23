@@ -3,25 +3,22 @@
 
 # Preprocess and analyze compressed crawl databases
 EXTRACTION_DIR="/tmp/census_tmp"
-
 BASE_PATH_HS="/home/mfuchs"
 BASE_PATH_FS="/crawler"
-CENSUS_LZ4_PATH="/census_data_lz4"
-ROOT_OUT_DIR= $CENSUS_LZ4_DATA_PATH/analysis/results
+CENSUS_LZ4_PATH="analysis/census_data_lz4"
 
 
 while getopts h:f: flag
 do
     case "${flag}" in
-        h) $CENSUS_LZ4_DATA_PATH=$BASE_PATH_HS/$CENSUS_LZ4_PATH;;
-        f) $CENSUS_LZ4_DATA_PATH=$BASE_PATH_FS/$CENSUS_LZ4_PATH;;
+        h) CENSUS_LZ4_DATA_PATH=$BASE_PATH_HS/$CENSUS_LZ4_PATH;;
+        f) CENSUS_LZ4_DATA_PATH=$BASE_PATH_FS/$CENSUS_LZ4_PATH;;
     esac
 done
-
+ROOT_OUT_DIR=$CENSUS_LZ4_DATA_PATH
 echo "Ex Dir $EXTRACTION_DIR"
 echo "CENSUS LZ4 PATH $CENSUS_LZ4_DATA_PATH"
 echo "Root out $ROOT_OUT_DIR"
-echo "CENSUS normalized $CENSUS_NORMALIZED_LZ4_DATA_PATH"
 
 
 function download(){
@@ -31,7 +28,7 @@ function download(){
 
     for crawl_archive_lz4 in $CENSUS_LZ4_DATA_PATH/*.tar.lz4
         do decompress_and_process $crawl_archive_lz4 $1
-    done;
+    done
 
 }
 
@@ -50,7 +47,6 @@ function decompress_and_process(){
 
 
 declare -a urls_1=(
-        
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-06_1m_stateless.tar.lz4",
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-07_1m_stateless.tar.lz4",
         "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-09_1m_stateless.tar.lz4",
