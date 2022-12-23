@@ -16,8 +16,8 @@ mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
 while getopts h:f: flag
 do
     case "${flag}" in
-        h) $CENSUS_LZ4_DATA_PATH=$CENSUS_LZ4_PATH/$BASE_PATH_HS;;
-        f) $CENSUS_LZ4_DATA_PATH=$CENSUS_LZ4_PATH/$BASE_PATH_FS;;
+        h) $CENSUS_LZ4_DATA_PATH=$BASE_PATH_HS/$CENSUS_LZ4_PATH;;
+        f) $CENSUS_LZ4_DATA_PATH=$BASE_PATH_FS/$CENSUS_LZ4_PATH;;
     esac
 done
 
