@@ -1,39 +1,159 @@
 import os
+import json
 import sys
 import sqlite3
+import traceback
+from sqlite3 import OperationalError
+import unicodedata as unicode
+from tqdm import tqdm
+import re
 from time import time
 from os.path import join, basename, sep, isdir
 from collections import defaultdict
+import crawl_utils.domain_utils as du
+import pandas as pd
+
 import util
 from db_schema import (HTTP_REQUESTS_TABLE,
-                       HTTP_RESPONSES_TABLE,
+                       HTTP_RESPONSES_TABLE, SITE_VISITS_TABLE,
                        JAVASCRIPT_TABLE, OPENWPM_TABLES)
 from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
+
+MIN_CANVAS_TEXT_LEN = 10
+MIN_CANVAS_IMAGE_WIDTH = 16
+MIN_CANVAS_IMAGE_HEIGHT = 16
+CANVAS_READ_FUNCS = [
+    "HTMLCanvasElement.toDataURL",
+    "CanvasRenderingContext2D.getImageData"
+]
+
+CANVAS_WRITE_FUNCS = [
+    "CanvasRenderingContext2D.fillText",
+    "CanvasRenderingContext2D.strokeText"
+]
+
+CANVAS_FP_DO_NOT_CALL_LIST = ["CanvasRenderingContext2D.save",
+                              "CanvasRenderingContext2D.restore",
+                              "HTMLCanvasElement.addEventListener"]
+
+
+def get_canvas_text(arguments):
+    """Return the string that is written onto canvas from function arguments."""
+    if not arguments:
+        return ""
+    canvas_write_args = json.loads(arguments)
+    try:
+        # cast numbers etc. to a unicode string
+        return unicode(canvas_write_args["0"])
+    except Exception:
+        return ""
+
+
+def are_get_image_data_dimensions_too_small(arguments):
+    """Check if the retrieved pixel data is larger than min. dimensions."""
+    # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
+    get_image_data_args = json.loads(arguments)
+    sw = int(get_image_data_args["2"])
+    sh = int(get_image_data_args["3"])
+    return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
+
+
+def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
+                              canvas_banned_calls, canvas_texts):
+    canvas_fingerprinters = set()
+    for script_address, visit_ids in canvas_reads.items():
+        if script_address in canvas_fingerprinters:
+            continue
+        canvas_rw_visits = visit_ids. \
+            intersection(canvas_writes[script_address])
+        if not canvas_rw_visits:
+            continue
+        # we can remove the following, we don't use the style/color condition
+        for canvas_rw_visit in canvas_rw_visits:
+            # check if the script has made a call to save, restore or
+            # addEventListener of the Canvas API. We exclude scripts making
+            # these calls to eliminate false positives
+            if canvas_rw_visit in canvas_banned_calls[script_address]:
+                print("Excluding potential canvas FP script", script_address,
+                      "visit#", canvas_rw_visit,
+                      canvas_texts[(script_address, canvas_rw_visit)])
+                continue
+            canvas_fingerprinters.add(script_address)
+            # print ("Canvas fingerprinter", script_address, "visit#",
+            #       canvas_rw_visit,
+            #       canvas_texts[(script_address, canvas_rw_visit)])
+            break
+
+    return canvas_fingerprinters
 
 
 class CrawlDBAnalysis(object):
 
     def __init__(self, crawl_dir, out_dir):
+        print("init")
+        print("crawl dir")
         self.crawl_dir = get_crawl_dir(crawl_dir)
+        print("crawl name")
         self.crawl_name = basename(crawl_dir.rstrip(sep))
+        print("crawl path")
         self.crawl_db_path = get_crawl_db_path(self.crawl_dir)
+        print("command fail rate")
         self.command_fail_rate = {}
+        print("cmd timeout")
         self.command_timeout_rate = {}
+        print("init db")
         self.init_db()
+        print("out dir")
         self.out_dir = join(out_dir, "analysis")
+        print("init out dir")
         self.init_out_dir()
+        print("visit_id_site_urls")
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
-        self.urls = self.get_urls_list()
+        print("urls")
+        self.suc_urls = defaultdict()
+        self.num_suc_urls = defaultdict()
+        print("selected visit ids")
+        self.selected_visit_ids = self.get_ids_list()
+        print("sv num request")
         self.sv_num_requests = defaultdict(int)
+        print("sv num responses")
         self.sv_num_responses = defaultdict(int)
+        print("sn num javascript")
         self.sv_num_javascript = defaultdict(int)
+        print("sn num third parties")
         self.sv_num_third_parties = defaultdict(int)
+        print("num entries withoud visit id")
         self.num_entries_without_visit_id = defaultdict(int)
+        print("trackig stats")
+        self.tracking_stats = defaultdict(int)
+        print("num entries")
         self.num_entries = defaultdict(int)
+        print("sv_third parties")
         self.sv_third_parties = defaultdict(set)
+        print("tp_to_publishers")
         self.tp_to_publishers = defaultdict(set)
+        print("rows without visit id")
         self.rows_without_visit_id = 0
+
+        self.no_javascript_calls = -1
+        self.no_api_calls = -1
+        self.no_session = -1
+        self.no_canvas_fingerprinting = -1
+        self.canvas_fingerprinters = defaultdict()
+
+        self.no_canvas_fingerprinters = -1
+        self.no_font_fp_sites = -1
+        self.no_font_fp_thirdparties = -1
+        self.font_fingerprinters = defaultdict(set)
+        self.canvas_fingerprinters_functions = defaultdict()
+
+        self.http_only = -1
+        self.js_session_cookies = -1
+
+        self.no_cookies = -1
+        self.no_sites_with_cookies = -1
+        self.cookies_perSite = defaultdict()
 
     def init_db(self):
         self.db_conn = sqlite3.connect(self.crawl_db_path)
@@ -60,6 +180,19 @@ class CrawlDBAnalysis(object):
         self.run_streaming_analysis_for_table(HTTP_RESPONSES_TABLE)
         self.run_streaming_analysis_for_table(JAVASCRIPT_TABLE)
 
+    def get_visit_id_http_status_mapping(self):
+        visit_id_http_status = {}
+        for visit_id, response_status in self.db_conn.execute(
+                "SELECT visit_id, response_status FROM http_responses"):
+            if response_status == 200:
+                visit_id_http_status[visit_id] = response_status
+            else:
+                continue
+
+        print(len(visit_id_http_status), "mappings")
+        print("Distinct site urls", len(set(visit_id_http_status.values())))
+        return visit_id_http_status
+
     def get_visit_id_site_url_mapping(self):
         visit_id_site_urls = {}
         for visit_id, site_url in self.db_conn.execute(
@@ -69,30 +202,79 @@ class CrawlDBAnalysis(object):
         print("Distinct site urls", len(set(visit_id_site_urls.values())))
         return visit_id_site_urls
 
-    def get_visit_id_site_url_mapping_selection(self, url_list):
-        visit_id_site_urls = {}
-        not_in_subset = {}
-        # modification: only visit_ids from sites that got crawled in all data sets
-        for visit_id, site_url in self.db_conn.execute(
-                "SELECT visit_id, site_url FROM site_visits"):
-            if site_url in url_list:
-                visit_id_site_urls[visit_id] = site_url
-            else:
-                not_in_subset[visit_id] = site_url
-        print(len(visit_id_site_urls), "mappings")
-        print("Distinct site urls in subset", len(set(visit_id_site_urls.values())))
-        return visit_id_site_urls
+    def load_urls(self):
 
-    def get_urls_list(self):
-        urls = []
+        # Opening JSON file
+        f = open('data/results/analysis/crawldir2022_successfully_crawled.json', )
+        # a dictionary
+        data = json.load(f)
+
+        df = []
+        # Iterating through the json
+        # list
+        for url in data:
+            df.append(url)
+        return df
+
+    def get_ids_list(self):
+        visit_id_list = []
         for visit_id, site_url in self.db_conn.execute(
                 "SELECT visit_id, site_url FROM site_visits"):
-            urls.append(site_url)
-        return urls
+            visit_id_list.append(visit_id)
+        return visit_id_list
+
+    def get_url_eff(self):
+        t0 = time()
+        url_dict = self.get_visit_id_site_url_mapping()
+        url = pd.DataFrame(list(url_dict.items()), columns=['visit_id', "site_url"], index=url_dict.keys())
+
+        http_dict = self.get_visit_id_http_status_mapping()
+        result = url.loc[url['visit_id'].isin(http_dict.keys())]
+
+        self.suc_urls = result['site_url'].tolist()
+        self.num_suc_urls = len(result.index)
+
+        print("Get_url_eff finished in %0.1f mins" % ((time() - t0) / 60))
+        print("No urls: ", self.num_suc_urls)
+        dump_as_json(self.suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "suc_urls.json")))
+        dump_as_json(self.num_suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "num_suc_urls.json")))
+
+
+
+
+    def get_urls(self):
+        t0 = time()
+        table_name = HTTP_RESPONSES_TABLE
+        cols_to_select = ["visit_id", "response_status"]
+        query = "SELECT %s FROM %s" % (",".join(cols_to_select), table_name)
+        urls = {}
+        urls_list = []
+        for row in self.db_conn.execute(query):
+            visit_id = int(row["visit_id"])
+            response_status = int(row['response_status'])
+            if visit_id == -1:  # delete later! not both!
+                continue
+            if response_status != 200:
+                continue
+            # id is not -1 and response_status == 200
+            else:
+                site_url = self.visit_id_site_urls[visit_id]
+                urls_list.append(site_url)
+
+                urls[visit_id] = visit_id
+                urls[site_url] = site_url
+            pass
+
+        print("Get_url finished in %0.1f mins" % ((time() - t0) / 60))
+        num_rows = self.db_conn.execute(
+            "SELECT COUNT(*) FROM %s WHERE response_status == 200;" % table_name).fetchone()[0]
+        print("Goal: ", num_rows)
+        print("Query_result: ", len(urls_list))
 
     def run_streaming_analysis_for_table(self, table_name):
         current_visit_ids = {}
         processed = 0
+        print(table_name)
         cols_to_select = ["visit_id", "crawl_id"]
         print("Will analyze %s" % table_name)
         if table_name == HTTP_REQUESTS_TABLE:
@@ -176,9 +358,21 @@ class CrawlDBAnalysis(object):
                 print("Total rows", table_name, num_rows)
 
     def dump_urls_list(self):
-        # self.dump_json(self.urls, "%s_%s" % ("urls_from", self.crawl_name))
-        print()
-        dump_as_json(self.urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "url_list.json")))
+
+        self.tracking_stats["javascript_calls"] = str(self.no_javascript_calls)
+        self.tracking_stats["javascript_cookies_total"] = str(self.no_cookies)
+        self.tracking_stats["no_sites_with_cookies"] = str(self.no_sites_with_cookies)
+        self.tracking_stats["no_javascript_calls"] = str(self.no_javascript_calls)
+        self.tracking_stats["no_api_calls"] = str(self.no_api_calls)
+        self.tracking_stats["no_http_only"] = str(self.http_only)
+        self.tracking_stats["is_session"] = str(self.js_session_cookies)
+        self.tracking_stats["no_canvas_attempts"] = str(self.no_canvas_fingerprinting)
+        self.tracking_stats["no_canvas_sites"] = str(self.no_canvas_fingerprinters)
+        self.tracking_stats["no_font_sites"] = str(self.no_font_fp_sites)
+        self.tracking_stats["no_font_3rdp"] = str(self.no_font_fp_thirdparties)
+
+
+        dump_as_json(self.tracking_stats, join(self.out_dir, "%s_%s" % (self.crawl_name, "tracking_stats.json")))
 
     def dump_crawl_data(self, table_name):
         if table_name == HTTP_REQUESTS_TABLE:
@@ -204,9 +398,183 @@ class CrawlDBAnalysis(object):
         self.run_all_streaming_analysis()
         self.dump_entries_without_visit_ids()
 
-    def start_url_list(self):
-        self.get_urls_list()
+    def start_fingerprinting_analysis(self):
+
+        # query = "SELECT * FROM javascript WHERE visit_id IN (" + self.list_for_query(self.selected_visit_ids) + ")"
+        # self.db_conn.row_factory = sqlite3.Row
+        # cur = self.db_conn.cursor()
+        js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
+        # js = pd.read_sql_query(query, self.db_conn)
+
+        self.get_canvas_fingerprinting(js)
+        self.get_font_fingerprinting(js)
+        self.no_javascript_calls = len(js)
+
+    def start_cookies_analysis(self):
+        self.get_cookies()
+
+    def dump_results(self):
         self.dump_urls_list()
+
+    def list_for_query(self, list):
+        return str(list)[1:-1]
+
+    def get_font_fingerprinting(self, js):
+
+        font_shorthand = re.compile(
+            r"^\s*(?=(?:(?:[-a-z]+\s*){0,2}(italic|oblique))?)(?=(?:(?:[-a-z]+\s*){0,2}(small-caps))?)(?=(?:(?:[-a-z]+\s*){0,2}(bold(?:er)?|lighter|[1-9]00))?)(?:(?:normal|\1|\2|\3)\s*){0,3}((?:xx?-)?(?:small|large)|medium|smaller|larger|[.\d]+(?:\%|in|[cem]m|ex|p[ctx]))(?:\s*\/\s*(normal|[.\d]+(?:\%|in|[cem]m|ex|p[ctx])))?\s*([-_\{\}\(\)\&!\',\*\.\"\sa-zA-Z0-9]+?)\s*$")
+
+        # Helper columns
+        js['script_ps1'] = js['script_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
+        js['top_ps1'] = js['top_level_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
+        js['document_ps1'] = js['document_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
+
+        fp = js[
+            (js.symbol == 'CanvasRenderingContext2D.measureText') &
+            (js.script_ps1 != js.top_ps1)]
+
+        scriptprovider_fingerprint = fp.groupby('script_ps1').top_ps1.count().sort_values(ascending=False)
+        tld_fingerprint = fp.groupby('top_ps1').top_ps1.count().sort_values(ascending=False)
+
+        self.no_font_fp_sites = fp['top_ps1'].nunique()
+        self.no_font_fp_thirdparties = fp['script_ps1'].nunique()
+
+
+        print(
+            "Scripts for fingerprinting where provided by " + str(
+                self.no_font_fp_thirdparties) + " providers on " + str(self.no_font_fp_sites) + " sites.")
+
+    def get_cookies(self):
+        self.db_conn.row_factory = sqlite3.Row
+        js = pd.read_sql_query(
+            "SELECT * FROM javascript_cookies;",
+            self.db_conn)
+
+        self.no_cookies = js.size
+        self.no_sites_with_cookies = js['visit_id'].size
+        self.no_session = js.loc[js['is_session'] == 1]
+        self.js_session_cookies = self.no_session.size
+        self.http_only = js.loc[js['is_http_only'] == 1].size
+
+        # self.cookies_perSite = self.no_session.groupby(['raw_host']).size().reset_index(name='# sites'). \
+        #    sort_values(by=['# sites'], ascending=False)
+
+    ## not implemented
+    def get_redirection(self, con):
+        # Load the data
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+        redirects = pd.read_sql_query("SELECT old_channel_id, new_channel_id, visit_id FROM http_redirects"
+                                      " WHERE old_channel_id IS NOT NULL AND is_sts_upgrade=0;", con)
+        requests = pd.read_sql_query("SELECT url, channel_id FROM http_requests;", con)
+
+        # build a map of channel_id to request url
+        channel_id_to_url_map = dict(zip(requests.channel_id, requests.url))
+
+        redirects["old_url"] = redirects["old_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
+        redirects["new_url"] = redirects["new_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
+
+        # Eliminate redirections that don't have a corresponding request in the http_requests table
+        redirects = redirects[~redirects.new_url.isnull()]
+
+        redirects['old_ps1'] = redirects['old_url'].apply(du.get_ps_plus_1)
+        redirects['new_ps1'] = redirects['new_url'].apply(du.get_ps_plus_1)
+
+        # only count redirections between different PS+1's
+        redirects = redirects[redirects.old_ps1 != redirects.new_ps1]
+
+        # only count a (src-dst) pair once on a website
+        redirects.drop_duplicates(subset=["visit_id", "old_ps1", "new_ps1"], inplace=True)
+
+        redirects.head()
+
+        redirects.groupby(['old_ps1', 'new_ps1']).size().reset_index(name='# sites'). \
+            sort_values(by=['# sites'], ascending=False)
+
+    def get_canvas_fingerprinting(self, js):
+        cur = self.db_conn.cursor()
+        query = """SELECT sv.site_url, sv.visit_id,
+            js.script_url, js.operation, js.arguments, js.symbol, js.value
+            FROM javascript as js LEFT JOIN site_visits as sv
+            ON sv.visit_id = js.visit_id WHERE
+            js.script_url <> ''
+            """
+
+        canvas_reads = defaultdict(set)
+        canvas_writes = defaultdict(set)
+        canvas_texts = defaultdict(set)
+        canvas_banned_calls = defaultdict(set)
+        canvas_styles = defaultdict(lambda: defaultdict(set))
+
+        for row in tqdm(cur.execute(query)):
+            # visit_id, script_url, operation, arguments, symbol, value = row[0:6]
+            visit_id = row["visit_id"]
+            site_url = row["site_url"]
+            script_url = row["script_url"]
+            operation = row["operation"]
+            arguments = row["arguments"]
+            symbol = row["symbol"]
+            value = row["value"]
+
+            # Exclude relative URLs, data urls, blobs
+            if not (script_url.startswith("http://")
+                    or script_url.startswith("https://")):
+                continue
+            if symbol in CANVAS_READ_FUNCS and operation == "call":
+                if (symbol == "CanvasRenderingContext2D.getImageData" and
+                        are_get_image_data_dimensions_too_small(arguments)):
+                    continue
+                canvas_reads[script_url].add(visit_id)
+            elif symbol in CANVAS_WRITE_FUNCS:
+                text = get_canvas_text(arguments)
+
+                # Python miscalculates the length of unicode strings that contain
+                # surrogate pairs such as emojis. This make strings look longer
+                # than they really are, and is causing false positives.
+                # For instance length of "🏴󠁧", which is written onto canvas by
+                # Wordpress to check emoji support, is returned as 13.
+                # We ignore non-ascii characters to prevent false positives.
+                # Perhaps a good idea to log such cases to prevent real fingerprinting
+                # scripts to slip in.
+                if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
+                    canvas_writes[script_url].add(visit_id)
+                    # the following is used to debug false positives
+                    canvas_texts[(script_url, visit_id)].add(text)
+            elif symbol == "CanvasRenderingContext2D.fillStyle" and \
+                    operation == "call":
+                canvas_styles[script_url][visit_id].add(value)
+            elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
+                canvas_banned_calls[script_url].add(visit_id)
+
+        self.canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
+                                                               canvas_writes,
+                                                               canvas_styles,
+                                                               canvas_banned_calls,
+                                                               canvas_texts)
+        self.no_canvas_fingerprinters = len(self.canvas_fingerprinters)
+
+        # Extract first arguments of function calls as a separate column
+        self.canvas_fingerprinters_functions = js["arguments"].map(lambda x: json.loads(x)["0"] if x else "")
+
+    def get_canvas_text(arguments):
+        """Return the string that is written onto canvas from function arguments."""
+        if not arguments:
+            return ""
+        canvas_write_args = json.loads(arguments)
+        try:
+            # cast numbers etc. to a unicode string
+            return unicode(canvas_write_args["0"])
+        except Exception:
+            return ""
+
+    def are_get_image_data_dimensions_too_small(arguments):
+        """Check if the retrieved pixel data is larger than min. dimensions."""
+        # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
+        get_image_data_args = json.loads(arguments)
+
+        sw = int(get_image_data_args["2"])
+        sh = int(get_image_data_args["3"])
+        return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
 
     def get_num_entries_without_visit_id(self, table_name):
         query = "SELECT count(*) FROM %s WHERE visit_id = -1;" % table_name
@@ -245,45 +613,44 @@ class CrawlDBAnalysis(object):
         command_counts = {}  # num. of total commands by type
         fails = {}  # num. of failed commands grouped by cmd type
         timeouts = {}  # num. of timeouts
-        for row in self.db_conn.execute(
-                """SELECT command, count(*)
-                FROM crawl_history
-                GROUP BY command;""").fetchall():
-            command_counts[row["command"]] = row["count(*)"]
-            print("crawl_history Totals", row["command"], row["count(*)"])
+        try:
+            for row in self.db_conn.execute(
+                    """SELECT command, count(*)
+                    FROM crawl_history
+                    GROUP BY command;""").fetchall():
+                command_counts[row["command"]] = row["count(*)"]
+                print("crawl_history Totals", row["command"], row["count(*)"])
 
-        for row in self.db_conn.execute(
-                """SELECT command, count(*)
-                FROM crawl_history
-                WHERE bool_success = 0
-                GROUP BY command;""").fetchall():
-            fails[row["command"]] = row["count(*)"]
-            print("crawl_history Fails", row["command"], row["count(*)"])
+            for row in self.db_conn.execute(
+                    """SELECT command, count(*)
+                    FROM crawl_history
+                    WHERE bool_success = 0
+                    GROUP BY command;""").fetchall():
+                fails[row["command"]] = row["count(*)"]
+                print("crawl_history Fails", row["command"], row["count(*)"])
 
-        for row in self.db_conn.execute(
-                """SELECT command, count(*)
-                FROM crawl_history
-                WHERE bool_success = -1
-                GROUP BY command;""").fetchall():
-            timeouts[row["command"]] = row["count(*)"]
-            print("crawl_history Timeouts", row["command"], row["count(*)"])
+            for row in self.db_conn.execute(
+                    """SELECT command, count(*)
+                    FROM crawl_history
+                    WHERE bool_success = -1
+                    GROUP BY command;""").fetchall():
+                timeouts[row["command"]] = row["count(*)"]
+                print("crawl_history Timeouts", row["command"], row["count(*)"])
 
-        for command in list(command_counts.keys()):
-            self.command_fail_rate[command] = (fails.get(command, 0) /
-                                               command_counts[command])
-            self.command_timeout_rate[command] = (timeouts.get(command, 0) /
-                                                  command_counts[command])
-            self.dump_json(self.command_fail_rate, "command_fail_rate.json")
-            self.dump_json(self.command_timeout_rate,
-                           "command_timeout_rate.json")
+            for command in list(command_counts.keys()):
+                self.command_fail_rate[command] = (fails.get(command, 0) /
+                                                   command_counts[command])
+                self.command_timeout_rate[command] = (timeouts.get(command, 0) /
+                                                      command_counts[command])
+                self.dump_json(self.command_fail_rate, "command_fail_rate.json")
+                self.dump_json(self.command_timeout_rate,
+                               "command_timeout_rate.json")
+        except sqlite3.OperationalError:
+            pass
 
 
 if __name__ == '__main__':
     t0 = time()
-    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
-    # crawl_db_check.start_analysis()
-    #crawl_db_check = CrawlDBAnalysis("/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data",
-    #                                 "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/results")
-    crawl_db_check.start_url_list()
-
+    crawl_db_check = CrawlDBAnalysis("/crawler/url/2015-12_1m_stateless/", "/crawler/results")
+    crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))

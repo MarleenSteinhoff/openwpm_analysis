@@ -2,10 +2,11 @@
 #set -e
 
 # Preprocess and analyze compressed crawl databases
-EXTRACTION_DIR="/tmp/census_tmp"
+EXTRACTION_DIR="/tmp/lz4"
 
-CENSUS_LZ4_DATA_PATH="/mnt/10tb4/census_data_lz4"
-ROOT_OUT_DIR="/mnt/10tb4/census-release"
+CENSUS_LZ4_DATA_PATH="/crawler/url"
+CODE_DIR="/home/fsadmin/openwpm_analysis"
+ROOT_OUT_DIR="/crawler/results"
 
 CENSUS_NORMALIZED_LZ4_DATA_PATH=${ROOT_OUT_DIR}/normalized/
 mkdir -p $CENSUS_NORMALIZED_LZ4_DATA_PATH
@@ -36,7 +37,23 @@ function decompress_and_process(){
   echo "Will remove $EXTRACTION_DIR/*201*"
   rm -rf $EXTRACTION_DIR/*201*
 }
-
-for crawl_archive_lz4 in $CENSUS_LZ4_DATA_PATH/$1/*.tar.lz4
+function get_lz4(){
+  for crawl_archive_lz4 in $CENSUS_LZ4_DATA_PATH/$1/*.tar.lz4
   do decompress_and_process $crawl_archive_lz4 $1
 done;
+}
+
+for url in "${urls[@]}";
+do
+  echo "$url"
+  download "$url"
+  get_lz4
+  decompress_and_process
+  get_urls
+  #prepare_data
+  #process
+  #zip_result
+  #cleanup
+done
+
+
