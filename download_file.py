@@ -23,15 +23,14 @@ if __name__ == '__main__':
     print(f"Downloading file {url}")
     os.chdir(f"{extraction_dir}")
     filename = url.rsplit('/',1)[1]
-    file_exists = exists(extraction_dir/filename)
-    if file_exists:
-        print("file exists. Skip download")
-    else:  
+    print(filename)
+    r = requests.get(url, auth=(username, password), stream=True)
+    print(f"Request resolved with code {r.status_code}")
+    if r.status_code != 200:
+        print("status_code != 200")
         r = requests.get(url, auth=(username, password), stream=True)
-        print(f"Request resolved with code {r.status_code}")
-        print(r.headers)
- 
     
+    print(r.headers)    
   
     if r.status_code == 200:
         with open(filename, "wb") as out:
