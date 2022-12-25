@@ -651,6 +651,6 @@ class CrawlDBAnalysis(object):
 
 if __name__ == '__main__':
     t0 = time()
-    crawl_db_check = CrawlDBAnalysis("/crawler/url/2015-12_1m_stateless/", "/crawler/results")
+    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
     crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))

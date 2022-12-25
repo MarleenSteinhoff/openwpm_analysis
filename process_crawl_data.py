@@ -98,7 +98,7 @@ class CrawlData(object):
         self.backup_crawl_files()
         self.dump_db_schema()
         self.normalize_db()
-        self.fix_alexa_ranks()
+        #self.fix_alexa_ranks()
         # self.vacuum_db()
 
     def fix_alexa_ranks(self):
