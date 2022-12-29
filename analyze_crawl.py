@@ -91,49 +91,28 @@ def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
 class CrawlDBAnalysis(object):
 
     def __init__(self, crawl_dir, out_dir):
-        print("init")
-        print("crawl dir")
         self.crawl_dir = get_crawl_dir(crawl_dir)
-        print("crawl name")
         self.crawl_name = basename(crawl_dir.rstrip(sep))
-        print("crawl path")
         self.crawl_db_path = get_crawl_db_path(self.crawl_dir)
-        print("command fail rate")
         self.command_fail_rate = {}
-        print("cmd timeout")
         self.command_timeout_rate = {}
-        print("init db")
         self.init_db()
-        print("out dir")
-        self.out_dir = join(out_dir, "analysis")
-        print("init out dir")
+        self.out_dir = join(out_dir, self.crawl_name)
+        print(self.outdir, "is outdir")
         self.init_out_dir()
-        print("visit_id_site_urls")
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
-        print("urls")
         self.suc_urls = defaultdict()
         self.num_suc_urls = defaultdict()
-        print("selected visit ids")
         self.selected_visit_ids = self.get_ids_list()
-        print("sv num request")
         self.sv_num_requests = defaultdict(int)
-        print("sv num responses")
         self.sv_num_responses = defaultdict(int)
-        print("sn num javascript")
         self.sv_num_javascript = defaultdict(int)
-        print("sn num third parties")
         self.sv_num_third_parties = defaultdict(int)
-        print("num entries withoud visit id")
         self.num_entries_without_visit_id = defaultdict(int)
-        print("trackig stats")
         self.tracking_stats = defaultdict(int)
-        print("num entries")
         self.num_entries = defaultdict(int)
-        print("sv_third parties")
         self.sv_third_parties = defaultdict(set)
-        print("tp_to_publishers")
         self.tp_to_publishers = defaultdict(set)
-        print("rows without visit id")
         self.rows_without_visit_id = 0
 
         self.no_javascript_calls = -1
@@ -236,6 +215,8 @@ class CrawlDBAnalysis(object):
 
         print("Get_url_eff finished in %0.1f mins" % ((time() - t0) / 60))
         print("No urls: ", self.num_suc_urls)
+        print(self.out_dir + "self.out_dir")
+        print(self.crawl_name + "self.crawl_name")
         dump_as_json(self.suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "suc_urls.json")))
         dump_as_json(self.num_suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "num_suc_urls.json")))
 
@@ -652,5 +633,6 @@ class CrawlDBAnalysis(object):
 if __name__ == '__main__':
     t0 = time()
     crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
+    print(self.out_dir)
     crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
