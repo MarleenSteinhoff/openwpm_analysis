@@ -98,7 +98,6 @@ class CrawlDBAnalysis(object):
         self.command_timeout_rate = {}
         self.init_db()
         self.out_dir = join(out_dir, self.crawl_name)
-        print(self.outdir, "is outdir")
         self.init_out_dir()
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
         self.suc_urls = defaultdict()
@@ -159,6 +158,9 @@ class CrawlDBAnalysis(object):
         self.run_streaming_analysis_for_table(HTTP_RESPONSES_TABLE)
         self.run_streaming_analysis_for_table(JAVASCRIPT_TABLE)
 
+    # run get_url_visit_id_mapping for a subset of given urls
+    # analysis will be performed for the visit_ids mapped to these urls only
+    def get_url_visit_id_mapping(self):
     def get_visit_id_http_status_mapping(self):
         visit_id_http_status = {}
         for visit_id, response_status in self.db_conn.execute(
@@ -633,6 +635,5 @@ class CrawlDBAnalysis(object):
 if __name__ == '__main__':
     t0 = time()
     crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
-    print(self.out_dir)
     crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
