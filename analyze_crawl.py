@@ -20,6 +20,7 @@ from db_schema import (HTTP_REQUESTS_TABLE,
 from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
 
+
 class CrawlDBAnalysis(object):
 
     def __init__(self, crawl_dir, out_dir):
@@ -34,7 +35,6 @@ class CrawlDBAnalysis(object):
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
         self.suc_urls = defaultdict()
         self.num_suc_urls = defaultdict()
-        self.selected_visit_ids = self.get_ids_list()
         self.sv_num_requests = defaultdict(int)
         self.sv_num_responses = defaultdict(int)
         self.sv_num_javascript = defaultdict(int)
@@ -65,7 +65,7 @@ class CrawlDBAnalysis(object):
         self.no_sites_with_cookies = -1
         self.cookies_perSite = defaultdict()
 
-        #fingerprinting variables
+        # fingerprinting variables
         self.MIN_CANVAS_TEXT_LEN = 10
         self.MIN_CANVAS_IMAGE_WIDTH = 16
         self.MIN_CANVAS_IMAGE_HEIGHT = 16
@@ -80,8 +80,8 @@ class CrawlDBAnalysis(object):
         ]
 
         self.CANVAS_FP_DO_NOT_CALL_LIST = ["CanvasRenderingContext2D.save",
-                                      "CanvasRenderingContext2D.restore",
-                                      "HTMLCanvasElement.addEventListener"]
+                                           "CanvasRenderingContext2D.restore",
+                                           "HTMLCanvasElement.addEventListener"]
 
     def init_db(self):
         self.db_conn = sqlite3.connect(self.crawl_db_path)
@@ -118,13 +118,14 @@ class CrawlDBAnalysis(object):
         data = tuple(visit_ids)
         with open('suc_urls_24.json') as json_file:
             data = json.load(json_file)
-
+        # selected URLs
         site_urls = tuple(data)
 
         query = f'SELECT visit_id, site_url FROM site_visits WHERE site_url IN {format(site_urls)}'
+        # get selected URLs with corresponding visit_ids from database
         visit_id_site_urls = pd.read_sql_query(query, self.db_conn)
         print(len(data), "URLs in the given URL list")
-        print(len(visit_id_site_urls), "visit_id - site_url - mappings found")
+        print(len(visit_id_site_urls), "visit_id-mappings found to the given list")
 
         return visit_id_site_urls
 
@@ -140,29 +141,6 @@ class CrawlDBAnalysis(object):
         print(len(visit_id_http_status), "mappings")
         print("Distinct site urls", len(set(visit_id_http_status.values())))
         return visit_id_http_status
-
-
-
-    def load_urls(self):
-
-        # Opening JSON file
-        f = open('data/results/analysis/crawldir2022_successfully_crawled.json', )
-        # a dictionary
-        data = json.load(f)
-
-        df = []
-        # Iterating through the json
-        # list
-        for url in data:
-            df.append(url)
-        return df
-
-    def get_ids_list(self):
-        visit_id_list = []
-        for visit_id, site_url in self.db_conn.execute(
-                "SELECT visit_id, site_url FROM site_visits"):
-            visit_id_list.append(visit_id)
-        return visit_id_list
 
     def get_url_eff(self):
         t0 = time()
@@ -181,38 +159,6 @@ class CrawlDBAnalysis(object):
         print(self.crawl_name + "self.crawl_name")
         dump_as_json(self.suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "suc_urls.json")))
         dump_as_json(self.num_suc_urls, join(self.out_dir, "%s_%s" % (self.crawl_name, "num_suc_urls.json")))
-
-
-
-
-    def get_urls(self):
-        t0 = time()
-        table_name = HTTP_RESPONSES_TABLE
-        cols_to_select = ["visit_id", "response_status"]
-        query = "SELECT %s FROM %s" % (",".join(cols_to_select), table_name)
-        urls = {}
-        urls_list = []
-        for row in self.db_conn.execute(query):
-            visit_id = int(row["visit_id"])
-            response_status = int(row['response_status'])
-            if visit_id == -1:  # delete later! not both!
-                continue
-            if response_status != 200:
-                continue
-            # id is not -1 and response_status == 200
-            else:
-                site_url = self.visit_id_site_urls[visit_id]
-                urls_list.append(site_url)
-
-                urls[visit_id] = visit_id
-                urls[site_url] = site_url
-            pass
-
-        print("Get_url finished in %0.1f mins" % ((time() - t0) / 60))
-        num_rows = self.db_conn.execute(
-            "SELECT COUNT(*) FROM %s WHERE response_status == 200;" % table_name).fetchone()[0]
-        print("Goal: ", num_rows)
-        print("Query_result: ", len(urls_list))
 
     def run_streaming_analysis_for_table(self, table_name):
         current_visit_ids = {}
@@ -284,6 +230,7 @@ class CrawlDBAnalysis(object):
 
         self.dump_crawl_data(table_name)
 
+
     def print_num_of_rows(self):
         print("Will print the number of rows")
         db_schema_str = get_table_and_column_names(self.crawl_db_path)
@@ -314,7 +261,6 @@ class CrawlDBAnalysis(object):
         self.tracking_stats["no_font_sites"] = str(self.no_font_fp_sites)
         self.tracking_stats["no_font_3rdp"] = str(self.no_font_fp_thirdparties)
 
-
         dump_as_json(self.tracking_stats, join(self.out_dir, "%s_%s" % (self.crawl_name, "tracking_stats.json")))
 
     def dump_crawl_data(self, table_name):
@@ -342,13 +288,7 @@ class CrawlDBAnalysis(object):
         self.dump_entries_without_visit_ids()
 
     def start_fingerprinting_analysis(self):
-
-        # query = "SELECT * FROM javascript WHERE visit_id IN (" + self.list_for_query(self.selected_visit_ids) + ")"
-        # self.db_conn.row_factory = sqlite3.Row
-        # cur = self.db_conn.cursor()
         js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
-        # js = pd.read_sql_query(query, self.db_conn)
-
         self.get_canvas_fingerprinting(js)
         self.get_font_fingerprinting(js)
         self.no_javascript_calls = len(js)
@@ -381,7 +321,6 @@ class CrawlDBAnalysis(object):
 
         self.no_font_fp_sites = fp['top_ps1'].nunique()
         self.no_font_fp_thirdparties = fp['script_ps1'].nunique()
-
 
         print(
             "Scripts for fingerprinting where provided by " + str(
@@ -435,7 +374,6 @@ class CrawlDBAnalysis(object):
             sort_values(by=['# sites'], ascending=False)
 
     def get_canvas_fingerprinting(self, js):
-
 
         cur = self.db_conn.cursor()
         query = """SELECT sv.site_url, sv.visit_id,
@@ -492,10 +430,10 @@ class CrawlDBAnalysis(object):
                 canvas_banned_calls[script_url].add(visit_id)
 
         self.canvas_fingerprinters = self.get_canvas_fingerprinters(canvas_reads,
-                                                               canvas_writes,
-                                                               canvas_styles,
-                                                               canvas_banned_calls,
-                                                               canvas_texts)
+                                                                    canvas_writes,
+                                                                    canvas_styles,
+                                                                    canvas_banned_calls,
+                                                                    canvas_texts)
         self.no_canvas_fingerprinters = len(self.canvas_fingerprinters)
 
         # Extract first arguments of function calls as a separate column
@@ -643,8 +581,8 @@ class CrawlDBAnalysis(object):
 
 if __name__ == '__main__':
     t0 = time()
-    #crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2], sys.argv[3])
+    # crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2], sys.argv[3])
     crawl_db_check = CrawlDBAnalysis('/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/',
                                      '/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results')
-    #crawl_db_check.get_url_eff()
+    # crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
