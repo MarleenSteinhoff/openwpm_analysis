@@ -38,54 +38,10 @@ CANVAS_FP_DO_NOT_CALL_LIST = ["CanvasRenderingContext2D.save",
                               "HTMLCanvasElement.addEventListener"]
 
 
-def get_canvas_text(arguments):
-    """Return the string that is written onto canvas from function arguments."""
-    if not arguments:
-        return ""
-    canvas_write_args = json.loads(arguments)
-    try:
-        # cast numbers etc. to a unicode string
-        return unicode(canvas_write_args["0"])
-    except Exception:
-        return ""
 
 
-def are_get_image_data_dimensions_too_small(arguments):
-    """Check if the retrieved pixel data is larger than min. dimensions."""
-    # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
-    get_image_data_args = json.loads(arguments)
-    sw = int(get_image_data_args["2"])
-    sh = int(get_image_data_args["3"])
-    return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
 
 
-def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
-                              canvas_banned_calls, canvas_texts):
-    canvas_fingerprinters = set()
-    for script_address, visit_ids in canvas_reads.items():
-        if script_address in canvas_fingerprinters:
-            continue
-        canvas_rw_visits = visit_ids. \
-            intersection(canvas_writes[script_address])
-        if not canvas_rw_visits:
-            continue
-        # we can remove the following, we don't use the style/color condition
-        for canvas_rw_visit in canvas_rw_visits:
-            # check if the script has made a call to save, restore or
-            # addEventListener of the Canvas API. We exclude scripts making
-            # these calls to eliminate false positives
-            if canvas_rw_visit in canvas_banned_calls[script_address]:
-                print("Excluding potential canvas FP script", script_address,
-                      "visit#", canvas_rw_visit,
-                      canvas_texts[(script_address, canvas_rw_visit)])
-                continue
-            canvas_fingerprinters.add(script_address)
-            # print ("Canvas fingerprinter", script_address, "visit#",
-            #       canvas_rw_visit,
-            #       canvas_texts[(script_address, canvas_rw_visit)])
-            break
-
-    return canvas_fingerprinters
 
 
 class CrawlDBAnalysis(object):
@@ -159,8 +115,19 @@ class CrawlDBAnalysis(object):
         self.run_streaming_analysis_for_table(JAVASCRIPT_TABLE)
 
     # run get_url_visit_id_mapping for a subset of given urls
-    # analysis will be performed for the visit_ids mapped to these urls only
-    def get_url_visit_id_mapping(self):
+    # analysis will be performed with the given URLs only
+    def get_visit_id_site_url_mapping(self):
+
+        visit_ids = pd.read_csv('suc_urls_24.json')
+
+        visit_id_site_urls = {}
+        for visit_id, site_url in self.db_conn.execute(
+                "SELECT visit_id, site_url FROM site_visits"):
+            visit_id_site_urls[visit_id] = site_url
+        print(len(visit_id_site_urls), "mappings")
+        print("Distinct site urls", len(set(visit_id_site_urls.values())))
+        return visit_id_site_urls
+
     def get_visit_id_http_status_mapping(self):
         visit_id_http_status = {}
         for visit_id, response_status in self.db_conn.execute(
@@ -174,14 +141,7 @@ class CrawlDBAnalysis(object):
         print("Distinct site urls", len(set(visit_id_http_status.values())))
         return visit_id_http_status
 
-    def get_visit_id_site_url_mapping(self):
-        visit_id_site_urls = {}
-        for visit_id, site_url in self.db_conn.execute(
-                "SELECT visit_id, site_url FROM site_visits"):
-            visit_id_site_urls[visit_id] = site_url
-        print(len(visit_id_site_urls), "mappings")
-        print("Distinct site urls", len(set(visit_id_site_urls.values())))
-        return visit_id_site_urls
+
 
     def load_urls(self):
 
@@ -631,9 +591,57 @@ class CrawlDBAnalysis(object):
         except sqlite3.OperationalError:
             pass
 
+    def get_canvas_fingerprinters(self, canvas_reads, canvas_writes, canvas_styles,
+                                  canvas_banned_calls, canvas_texts):
+        canvas_fingerprinters = set()
+        for script_address, visit_ids in canvas_reads.items():
+            if script_address in canvas_fingerprinters:
+                continue
+            canvas_rw_visits = visit_ids. \
+                intersection(canvas_writes[script_address])
+            if not canvas_rw_visits:
+                continue
+            # we can remove the following, we don't use the style/color condition
+            for canvas_rw_visit in canvas_rw_visits:
+                # check if the script has made a call to save, restore or
+                # addEventListener of the Canvas API. We exclude scripts making
+                # these calls to eliminate false positives
+                if canvas_rw_visit in canvas_banned_calls[script_address]:
+                    print("Excluding potential canvas FP script", script_address,
+                          "visit#", canvas_rw_visit,
+                          canvas_texts[(script_address, canvas_rw_visit)])
+                    continue
+                canvas_fingerprinters.add(script_address)
+                # print ("Canvas fingerprinter", script_address, "visit#",
+                #       canvas_rw_visit,
+                #       canvas_texts[(script_address, canvas_rw_visit)])
+                break
+
+        return canvas_fingerprinters
+
+    def get_canvas_text(self, arguments):
+        """Return the string that is written onto canvas from function arguments."""
+        if not arguments:
+            return ""
+        canvas_write_args = json.loads(arguments)
+        try:
+            # cast numbers etc. to a unicode string
+            return unicode(canvas_write_args["0"])
+        except Exception:
+            return ""
+
+    def are_get_image_data_dimensions_too_small(self, arguments):
+        """Check if the retrieved pixel data is larger than min. dimensions."""
+        # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
+        get_image_data_args = json.loads(arguments)
+        sw = int(get_image_data_args["2"])
+        sh = int(get_image_data_args["3"])
+        return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
+
 
 if __name__ == '__main__':
     t0 = time()
-    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2])
+    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2], sys.argv[3])
+    crawl_db_check.
     crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
