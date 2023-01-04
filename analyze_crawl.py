@@ -20,30 +20,6 @@ from db_schema import (HTTP_REQUESTS_TABLE,
 from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
 
-MIN_CANVAS_TEXT_LEN = 10
-MIN_CANVAS_IMAGE_WIDTH = 16
-MIN_CANVAS_IMAGE_HEIGHT = 16
-CANVAS_READ_FUNCS = [
-    "HTMLCanvasElement.toDataURL",
-    "CanvasRenderingContext2D.getImageData"
-]
-
-CANVAS_WRITE_FUNCS = [
-    "CanvasRenderingContext2D.fillText",
-    "CanvasRenderingContext2D.strokeText"
-]
-
-CANVAS_FP_DO_NOT_CALL_LIST = ["CanvasRenderingContext2D.save",
-                              "CanvasRenderingContext2D.restore",
-                              "HTMLCanvasElement.addEventListener"]
-
-
-
-
-
-
-
-
 class CrawlDBAnalysis(object):
 
     def __init__(self, crawl_dir, out_dir):
@@ -89,6 +65,24 @@ class CrawlDBAnalysis(object):
         self.no_sites_with_cookies = -1
         self.cookies_perSite = defaultdict()
 
+        #fingerprinting variables
+        self.MIN_CANVAS_TEXT_LEN = 10
+        self.MIN_CANVAS_IMAGE_WIDTH = 16
+        self.MIN_CANVAS_IMAGE_HEIGHT = 16
+        self.CANVAS_READ_FUNCS = [
+            "HTMLCanvasElement.toDataURL",
+            "CanvasRenderingContext2D.getImageData"
+        ]
+
+        self.CANVAS_WRITE_FUNCS = [
+            "CanvasRenderingContext2D.fillText",
+            "CanvasRenderingContext2D.strokeText"
+        ]
+
+        self.CANVAS_FP_DO_NOT_CALL_LIST = ["CanvasRenderingContext2D.save",
+                                      "CanvasRenderingContext2D.restore",
+                                      "HTMLCanvasElement.addEventListener"]
+
     def init_db(self):
         self.db_conn = sqlite3.connect(self.crawl_db_path)
         self.db_conn.row_factory = sqlite3.Row
@@ -117,15 +111,21 @@ class CrawlDBAnalysis(object):
     # run get_url_visit_id_mapping for a subset of given urls
     # analysis will be performed with the given URLs only
     def get_visit_id_site_url_mapping(self):
+        cur = self.db_conn.cursor()
+        visit_ids = pd.read_json('suc_urls_24.json')
+        visit_ids.columns = ['url']
 
-        visit_ids = pd.read_csv('suc_urls_24.json')
+        data = tuple(visit_ids)
+        with open('suc_urls_24.json') as json_file:
+            data = json.load(json_file)
 
-        visit_id_site_urls = {}
-        for visit_id, site_url in self.db_conn.execute(
-                "SELECT visit_id, site_url FROM site_visits"):
-            visit_id_site_urls[visit_id] = site_url
-        print(len(visit_id_site_urls), "mappings")
-        print("Distinct site urls", len(set(visit_id_site_urls.values())))
+        site_urls = tuple(data)
+
+        query = f'SELECT visit_id, site_url FROM site_visits WHERE site_url IN {format(site_urls)}'
+        visit_id_site_urls = pd.read_sql_query(query, self.db_conn)
+        print(len(data), "URLs in the given URL list")
+        print(len(visit_id_site_urls), "visit_id - site_url - mappings found")
+
         return visit_id_site_urls
 
     def get_visit_id_http_status_mapping(self):
@@ -435,6 +435,8 @@ class CrawlDBAnalysis(object):
             sort_values(by=['# sites'], ascending=False)
 
     def get_canvas_fingerprinting(self, js):
+
+
         cur = self.db_conn.cursor()
         query = """SELECT sv.site_url, sv.visit_id,
             js.script_url, js.operation, js.arguments, js.symbol, js.value
@@ -463,13 +465,13 @@ class CrawlDBAnalysis(object):
             if not (script_url.startswith("http://")
                     or script_url.startswith("https://")):
                 continue
-            if symbol in CANVAS_READ_FUNCS and operation == "call":
+            if symbol in self.CANVAS_READ_FUNCS and operation == "call":
                 if (symbol == "CanvasRenderingContext2D.getImageData" and
-                        are_get_image_data_dimensions_too_small(arguments)):
+                        self.are_get_image_data_dimensions_too_small(arguments)):
                     continue
                 canvas_reads[script_url].add(visit_id)
-            elif symbol in CANVAS_WRITE_FUNCS:
-                text = get_canvas_text(arguments)
+            elif symbol in self.CANVAS_WRITE_FUNCS:
+                text = self.get_canvas_text(arguments)
 
                 # Python miscalculates the length of unicode strings that contain
                 # surrogate pairs such as emojis. This make strings look longer
@@ -479,17 +481,17 @@ class CrawlDBAnalysis(object):
                 # We ignore non-ascii characters to prevent false positives.
                 # Perhaps a good idea to log such cases to prevent real fingerprinting
                 # scripts to slip in.
-                if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
+                if len(text.encode('ascii', 'ignore')) >= self.MIN_CANVAS_TEXT_LEN:
                     canvas_writes[script_url].add(visit_id)
                     # the following is used to debug false positives
                     canvas_texts[(script_url, visit_id)].add(text)
             elif symbol == "CanvasRenderingContext2D.fillStyle" and \
                     operation == "call":
                 canvas_styles[script_url][visit_id].add(value)
-            elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
+            elif operation == "call" and symbol in self.CANVAS_FP_DO_NOT_CALL_LIST:
                 canvas_banned_calls[script_url].add(visit_id)
 
-        self.canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
+        self.canvas_fingerprinters = self.get_canvas_fingerprinters(canvas_reads,
                                                                canvas_writes,
                                                                canvas_styles,
                                                                canvas_banned_calls,
@@ -510,14 +512,14 @@ class CrawlDBAnalysis(object):
         except Exception:
             return ""
 
-    def are_get_image_data_dimensions_too_small(arguments):
+    def are_get_image_data_dimensions_too_small(self, arguments):
         """Check if the retrieved pixel data is larger than min. dimensions."""
         # https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/getImageData#Parameters  # noqa
         get_image_data_args = json.loads(arguments)
 
         sw = int(get_image_data_args["2"])
         sh = int(get_image_data_args["3"])
-        return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
+        return (sw < self.MIN_CANVAS_IMAGE_WIDTH) or (sh < self.MIN_CANVAS_IMAGE_HEIGHT)
 
     def get_num_entries_without_visit_id(self, table_name):
         query = "SELECT count(*) FROM %s WHERE visit_id = -1;" % table_name
@@ -636,12 +638,13 @@ class CrawlDBAnalysis(object):
         get_image_data_args = json.loads(arguments)
         sw = int(get_image_data_args["2"])
         sh = int(get_image_data_args["3"])
-        return (sw < MIN_CANVAS_IMAGE_WIDTH) or (sh < MIN_CANVAS_IMAGE_HEIGHT)
+        return (sw < self.MIN_CANVAS_IMAGE_WIDTH) or (sh < self.MIN_CANVAS_IMAGE_HEIGHT)
 
 
 if __name__ == '__main__':
     t0 = time()
-    crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2], sys.argv[3])
-    crawl_db_check.
-    crawl_db_check.get_url_eff()
+    #crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2], sys.argv[3])
+    crawl_db_check = CrawlDBAnalysis('/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/',
+                                     '/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results')
+    #crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
