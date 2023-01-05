@@ -306,6 +306,7 @@ class CrawlDBAnalysis(object):
             query = f'SELECT * FROM javascript WHERE visit_id IN {format(selected_visit_ids)}'
             # get selected URLs with corresponding visit_ids from database
             js = pd.read_sql_query(query, self.db_conn)
+
         else:
             js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
 
@@ -396,8 +397,8 @@ class CrawlDBAnalysis(object):
     def get_canvas_fingerprinting(self, js, use_selected):
         #build query
         if use_selected:
+            # use data from selected visit_ids
             selected_visit_ids = tuple(self.visit_ids)
-
             query = f"""SELECT sv.site_url, sv.visit_id,
                 js.script_url, js.operation, js.arguments, js.symbol, js.value
                 FROM javascript as js LEFT JOIN site_visits as sv
@@ -416,7 +417,6 @@ class CrawlDBAnalysis(object):
         # test conn, all entries
         self.db_conn.row_factory = sqlite3.Row
         cur = self.db_conn.cursor()
-        js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
         #
 
         # Add the helper column
@@ -428,12 +428,6 @@ class CrawlDBAnalysis(object):
         self.most_common_arguments_to_CanvasRenderingContext2D = js[(js.operation == "call") &
                                                                     (js.symbol == "CanvasRenderingContext2D.fillText")
                                                                     ].arguments.value_counts().head(20)
-        query = """SELECT sv.site_url, sv.visit_id,
-            js.script_url, js.operation, js.arguments, js.symbol, js.value
-            FROM javascript as js LEFT JOIN site_visits as sv
-            ON sv.visit_id = js.visit_id WHERE
-            js.script_url <> ''
-            """
 
         canvas_reads = defaultdict(set)
         canvas_writes = defaultdict(set)
@@ -644,6 +638,6 @@ if __name__ == '__main__':
     # crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2], sys.argv[3])
     crawl_db_check = CrawlDBAnalysis('/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse',
                                      '/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results')
-    crawl_db_check.start_fingerprinting_analysis(False)
+    crawl_db_check.start_fingerprinting_analysis(True)
     # crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
