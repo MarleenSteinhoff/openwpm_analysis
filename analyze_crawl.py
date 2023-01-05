@@ -32,9 +32,21 @@ class CrawlDBAnalysis(object):
         self.init_db()
         self.out_dir = join(out_dir, self.crawl_name)
         self.init_out_dir()
+
+        # mappings and selected ids
         self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
+        self.visit_ids = self.visit_id_site_urls['visit_id'].tolist()
         self.suc_urls = defaultdict()
         self.num_suc_urls = defaultdict()
+
+        # fingerprinting related variables
+        self.num_js_calls = int
+        self.most_common_canvas_API_calls = defaultdict(int)
+        self.most_common_arguments_to_CanvasRenderingContext2D = defaultdict(int)
+        self.canvas_fingerprinting_scripts = defaultdict
+
+        # others
+
         self.sv_num_requests = defaultdict(int)
         self.sv_num_responses = defaultdict(int)
         self.sv_num_javascript = defaultdict(int)
@@ -65,7 +77,7 @@ class CrawlDBAnalysis(object):
         self.no_sites_with_cookies = -1
         self.cookies_perSite = defaultdict()
 
-        # fingerprinting variables
+        # fingerprinting condition variables
         self.MIN_CANVAS_TEXT_LEN = 10
         self.MIN_CANVAS_IMAGE_WIDTH = 16
         self.MIN_CANVAS_IMAGE_HEIGHT = 16
@@ -112,6 +124,7 @@ class CrawlDBAnalysis(object):
     # analysis will be performed with the given URLs only
     def get_visit_id_site_url_mapping(self):
         cur = self.db_conn.cursor()
+        # TODO: set json file as varibale
         visit_ids = pd.read_json('suc_urls_24.json')
         visit_ids.columns = ['url']
 
@@ -287,9 +300,16 @@ class CrawlDBAnalysis(object):
         self.run_all_streaming_analysis()
         self.dump_entries_without_visit_ids()
 
-    def start_fingerprinting_analysis(self):
-        js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
-        self.get_canvas_fingerprinting(js)
+    def start_fingerprinting_analysis(self, use_selected):
+        if use_selected:
+            selected_visit_ids = tuple(self.visit_ids)
+            query = f'SELECT * FROM javascript WHERE visit_id IN {format(selected_visit_ids)}'
+            # get selected URLs with corresponding visit_ids from database
+            js = pd.read_sql_query(query, self.db_conn)
+        else:
+            js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
+
+        self.get_canvas_fingerprinting(js, use_selected)
         self.get_font_fingerprinting(js)
         self.no_javascript_calls = len(js)
 
@@ -373,9 +393,41 @@ class CrawlDBAnalysis(object):
         redirects.groupby(['old_ps1', 'new_ps1']).size().reset_index(name='# sites'). \
             sort_values(by=['# sites'], ascending=False)
 
-    def get_canvas_fingerprinting(self, js):
+    def get_canvas_fingerprinting(self, js, use_selected):
+        #build query
+        if use_selected:
+            selected_visit_ids = tuple(self.visit_ids)
 
+            query = f"""SELECT sv.site_url, sv.visit_id,
+                js.script_url, js.operation, js.arguments, js.symbol, js.value
+                FROM javascript as js LEFT JOIN site_visits as sv
+                ON sv.visit_id = js.visit_id WHERE
+                js.script_url <> '' AND sv.visit_id IN {format(selected_visit_ids)}
+                """
+
+        else:
+            query = """SELECT sv.site_url, sv.visit_id,
+                js.script_url, js.operation, js.arguments, js.symbol, js.value
+                FROM javascript as js LEFT JOIN site_visits as sv
+                ON sv.visit_id = js.visit_id WHERE
+                js.script_url <> ''
+                """
+
+        # test conn, all entries
+        self.db_conn.row_factory = sqlite3.Row
         cur = self.db_conn.cursor()
+        js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
+        #
+
+        # Add the helper column
+        js['script_ps1'] = js['script_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
+
+        # basic statistics
+        self.num_js_calls = len(js)
+        self.most_common_canvas_API_calls = js[js.operation == "call"].symbol.value_counts().head(20)
+        self.most_common_arguments_to_CanvasRenderingContext2D = js[(js.operation == "call") &
+                                                                    (js.symbol == "CanvasRenderingContext2D.fillText")
+                                                                    ].arguments.value_counts().head(20)
         query = """SELECT sv.site_url, sv.visit_id,
             js.script_url, js.operation, js.arguments, js.symbol, js.value
             FROM javascript as js LEFT JOIN site_visits as sv
@@ -389,6 +441,7 @@ class CrawlDBAnalysis(object):
         canvas_banned_calls = defaultdict(set)
         canvas_styles = defaultdict(lambda: defaultdict(set))
 
+        # start streaming analysis
         for row in tqdm(cur.execute(query)):
             # visit_id, script_url, operation, arguments, symbol, value = row[0:6]
             visit_id = row["visit_id"]
@@ -428,27 +481,27 @@ class CrawlDBAnalysis(object):
                 canvas_styles[script_url][visit_id].add(value)
             elif operation == "call" and symbol in self.CANVAS_FP_DO_NOT_CALL_LIST:
                 canvas_banned_calls[script_url].add(visit_id)
+        # get fingerprinting urls
 
-        self.canvas_fingerprinters = self.get_canvas_fingerprinters(canvas_reads,
-                                                                    canvas_writes,
-                                                                    canvas_styles,
-                                                                    canvas_banned_calls,
-                                                                    canvas_texts)
-        self.no_canvas_fingerprinters = len(self.canvas_fingerprinters)
+        canvas_fingerprinters = self.get_canvas_fingerprinters(canvas_reads,
+                                                          canvas_writes,
+                                                          canvas_styles,
+                                                          canvas_banned_calls,
+                                                          canvas_texts)
 
+        self.no_canvas_fingerprinters = len(canvas_fingerprinters)
+        self.canvas_fingerprinters = canvas_fingerprinters
+
+        # Mark canvas fingerprinting scripts in the dataframe
+        js["canvas_fp"] = js["script_url"].map(lambda x: x in self.canvas_fingerprinters)
         # Extract first arguments of function calls as a separate column
-        self.canvas_fingerprinters_functions = js["arguments"].map(lambda x: json.loads(x)["0"] if x else "")
+        js["arg0"] = js["arguments"].map(lambda x: json.loads(x)["0"] if x else "")
 
-    def get_canvas_text(arguments):
-        """Return the string that is written onto canvas from function arguments."""
-        if not arguments:
-            return ""
-        canvas_write_args = json.loads(arguments)
-        try:
-            # cast numbers etc. to a unicode string
-            return unicode(canvas_write_args["0"])
-        except Exception:
-            return ""
+        self.canvas_fingerprinting_scripts = js[
+            js.canvas_fp & (js.operation == "call") & (js.symbol == "CanvasRenderingContext2D.fillText")
+            ].rename({"arg0": "canvas_text"}, axis='columns')[["top_level_url", "script_ps1", "canvas_text"]]. \
+            drop_duplicates()
+
 
     def are_get_image_data_dimensions_too_small(self, arguments):
         """Check if the retrieved pixel data is larger than min. dimensions."""
@@ -533,6 +586,12 @@ class CrawlDBAnalysis(object):
 
     def get_canvas_fingerprinters(self, canvas_reads, canvas_writes, canvas_styles,
                                   canvas_banned_calls, canvas_texts):
+        print('canvas_reads:', canvas_reads)
+        print('canvas_writes:', canvas_writes)
+        print('canvas_styles:', canvas_styles)
+        print('canvas_banned_calls:', canvas_banned_calls)
+        print('canvas_texts:', canvas_texts)
+
         canvas_fingerprinters = set()
         for script_address, visit_ids in canvas_reads.items():
             if script_address in canvas_fingerprinters:
@@ -566,7 +625,8 @@ class CrawlDBAnalysis(object):
         canvas_write_args = json.loads(arguments)
         try:
             # cast numbers etc. to a unicode string
-            return unicode(canvas_write_args["0"])
+            unicode = str(canvas_write_args["0"])
+            return unicode
         except Exception:
             return ""
 
@@ -582,7 +642,8 @@ class CrawlDBAnalysis(object):
 if __name__ == '__main__':
     t0 = time()
     # crawl_db_check = CrawlDBAnalysis(sys.argv[1], sys.argv[2], sys.argv[3])
-    crawl_db_check = CrawlDBAnalysis('/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/',
+    crawl_db_check = CrawlDBAnalysis('/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse',
                                      '/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results')
+    crawl_db_check.start_fingerprinting_analysis(False)
     # crawl_db_check.get_url_eff()
     print("Analysis finished in %0.1f mins" % ((time() - t0) / 60))
