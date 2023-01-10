@@ -64,10 +64,12 @@ class CrawlDBAnalysis(object):
         self.no_canvas_fingerprinting = -1
         self.canvas_fingerprinters = defaultdict()
 
+
         self.no_canvas_fingerprinters = -1
-        self.no_font_fp_sites = -1
+        self.no_font_fp_firstpartysites = -1
         self.no_font_fp_thirdparties = -1
         self.font_fingerprinters = defaultdict(set)
+        self.canvas_fingerprinters = defaultdict(set)
         self.canvas_fingerprinters_functions = defaultdict()
 
         self.http_only = -1
@@ -76,6 +78,7 @@ class CrawlDBAnalysis(object):
         self.no_cookies = -1
         self.no_sites_with_cookies = -1
         self.cookies_perSite = defaultdict()
+        self.tracking_cookies = -1
 
         # fingerprinting condition variables
         self.MIN_CANVAS_TEXT_LEN = 10
@@ -271,7 +274,7 @@ class CrawlDBAnalysis(object):
         self.tracking_stats["is_session"] = str(self.js_session_cookies)
         self.tracking_stats["no_canvas_attempts"] = str(self.no_canvas_fingerprinting)
         self.tracking_stats["no_canvas_sites"] = str(self.no_canvas_fingerprinters)
-        self.tracking_stats["no_font_sites"] = str(self.no_font_fp_sites)
+        self.tracking_stats["no_font_sites"] = str(self.no_font_fp_firstpartysites)
         self.tracking_stats["no_font_3rdp"] = str(self.no_font_fp_thirdparties)
 
         dump_as_json(self.tracking_stats, join(self.out_dir, "%s_%s" % (self.crawl_name, "tracking_stats.json")))
@@ -303,13 +306,14 @@ class CrawlDBAnalysis(object):
     def start_fingerprinting_analysis(self, use_selected):
         if use_selected:
             selected_visit_ids = tuple(self.visit_ids)
+
             query = f'SELECT * FROM javascript WHERE visit_id IN {format(selected_visit_ids)}'
             # get selected URLs with corresponding visit_ids from database
             js = pd.read_sql_query(query, self.db_conn)
 
         else:
             js = pd.read_sql_query("SELECT * FROM javascript", self.db_conn)
-
+        self.no_top_urls = len(set(js['visit_id']))
         self.get_canvas_fingerprinting(js, use_selected)
         self.get_font_fingerprinting(js)
         self.no_javascript_calls = len(js)
@@ -324,28 +328,35 @@ class CrawlDBAnalysis(object):
         return str(list)[1:-1]
 
     def get_font_fingerprinting(self, js):
+        print("Number of javascript calls ", len(js))
+        print("Distinct visit ids with javascript calls ", len(set(js['visit_id'])))
 
-        font_shorthand = re.compile(
-            r"^\s*(?=(?:(?:[-a-z]+\s*){0,2}(italic|oblique))?)(?=(?:(?:[-a-z]+\s*){0,2}(small-caps))?)(?=(?:(?:[-a-z]+\s*){0,2}(bold(?:er)?|lighter|[1-9]00))?)(?:(?:normal|\1|\2|\3)\s*){0,3}((?:xx?-)?(?:small|large)|medium|smaller|larger|[.\d]+(?:\%|in|[cem]m|ex|p[ctx]))(?:\s*\/\s*(normal|[.\d]+(?:\%|in|[cem]m|ex|p[ctx])))?\s*([-_\{\}\(\)\&!\',\*\.\"\sa-zA-Z0-9]+?)\s*$")
-
-        # Helper columns
+        # Helper columns with public suffix + 1
         js['script_ps1'] = js['script_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
         js['top_ps1'] = js['top_level_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
         js['document_ps1'] = js['document_url'].apply(lambda x: du.get_ps_plus_1(x) if x is not None else None)
 
-        fp = js[
-            (js.symbol == 'CanvasRenderingContext2D.measureText') &
-            (js.script_ps1 != js.top_ps1)]
+        # Canvas function calls
+        js_script_provider = js[(js.symbol == 'CanvasRenderingContext2D.measureText') & (js.script_ps1 != js.top_ps1)].groupby('script_ps1').top_ps1.count().sort_values(ascending=False)
 
-        scriptprovider_fingerprint = fp.groupby('script_ps1').top_ps1.count().sort_values(ascending=False)
-        tld_fingerprint = fp.groupby('top_ps1').top_ps1.count().sort_values(ascending=False)
+        fp_measuretext = js[(js.symbol == 'CanvasRenderingContext2D.measureText') & (js.script_ps1 != js.top_ps1)]
+        self.no_font_fp_firstpartysites = fp_measuretext['top_ps1'].nunique()
+        self.no_font_fp_thirdparties = fp_measuretext['script_ps1'].nunique()
+        self.font_fingerprinters = fp_measuretext.groupby('script_ps1').top_ps1.count().sort_values(ascending=False)
 
-        self.no_font_fp_sites = fp['top_ps1'].nunique()
-        self.no_font_fp_thirdparties = fp['script_ps1'].nunique()
+        font_shorthand = re.compile(
+            r"^\s*(?=(?:(?:[-a-z]+\s*){0,2}(italic|oblique))?)(?=(?:(?:[-a-z]+\s*){0,2}(small-caps))?)(?=(?:(?:[-a-z]+\s*){0,2}(bold(?:er)?|lighter|[1-9]00))?)(?:(?:normal|\1|\2|\3)\s*){0,3}((?:xx?-)?(?:small|large)|medium|smaller|larger|[.\d]+(?:\%|in|[cem]m|ex|p[ctx]))(?:\s*\/\s*(normal|[.\d]+(?:\%|in|[cem]m|ex|p[ctx])))?\s*([-_\{\}\(\)\&!\',\*\.\"\sa-zA-Z0-9]+?)\s*$")
+        # get fonts from 1st fingerprinting script provider
+        url = js_script_provider.index[0]
 
-        print(
-            "Scripts for fingerprinting where provided by " + str(
-                self.no_font_fp_thirdparties) + " providers on " + str(self.no_font_fp_sites) + " sites.")
+        fonts = js[
+            (js.symbol == 'CanvasRenderingContext2D.font') &
+            (js.script_ps1 != js.top_ps1) &
+            (js.script_ps1 == url)
+            ].value.apply(lambda x: re.match(font_shorthand, x).group(6)).unique()
+
+        self.fonts_first_fingerprinter = fonts
+
 
     def get_cookies(self):
         self.db_conn.row_factory = sqlite3.Row
@@ -359,6 +370,9 @@ class CrawlDBAnalysis(object):
         self.js_session_cookies = self.no_session.size
         self.http_only = js.loc[js['is_http_only'] == 1].size
 
+        self.tracking_cookies = -1
+
+        
         # self.cookies_perSite = self.no_session.groupby(['raw_host']).size().reset_index(name='# sites'). \
         #    sort_values(by=['# sites'], ascending=False)
 
