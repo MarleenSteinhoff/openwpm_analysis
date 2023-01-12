@@ -38,11 +38,10 @@ def is_third_party(url, site_url):
 
     return True
 
-DISCONNECT_JSON = "services.json"
-def get_disconnect_blocked_hosts(disconnect_json=DISCONNECT_JSON):
+def get_disconnect_blocked_hosts():
     blocked_hosts = set()
 
-    with open(disconnect_json, 'r') as j:
+    with open("services.json", 'r') as j:
         disconnect = json.loads(j.read())
 
     #disconnect = json.loads(open(disconnect_json).read())
