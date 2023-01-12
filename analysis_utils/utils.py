@@ -44,7 +44,7 @@ def get_disconnect_blocked_hosts():
     __location__ = os.path.realpath(
         os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
-    with open(os.path.join(__location__, 'bundled-resource.jpg'), 'r') as j:
+    with open(os.path.join(__location__, 'services.json'), 'r') as j:
         disconnect = json.loads(j.read())
 
     #disconnect = json.loads(open(disconnect_json).read())
