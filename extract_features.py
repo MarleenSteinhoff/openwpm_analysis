@@ -20,7 +20,6 @@ from _collections import defaultdict
 
 # https://github.com/scrapinghub/adblockparser
 from adblockparser import AdblockRules
-from analysis_utils import BlockListParser
 from util import dump_as_json, get_visit_id_http_status_mapping, get_successfull_crawled_ids, \
     get_visit_id_site_url_mapping
 from analysis_utils.utils import (is_third_party, is_blocked_by_disconnect,
@@ -1012,7 +1011,7 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         get_cookies(crawl_db_path, selected_ids)
-        extract_features(crawl_db_path, out_csv, MAX_RANK, selected_ids)
+        extract_features(crawl_db_path, out_csv, selected_ids)
 
 
     else:
