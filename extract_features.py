@@ -300,7 +300,8 @@ SENSOR_FEATURES = [
  """
 
 
-def get_cookies(db_file, id_urls_map=tuple(), max_rank=0):
+def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
+    print("get_cookies")
     # database conn
     db = sqlite3.connect(db_file)
     db.row_factory = sqlite3.Row
@@ -336,7 +337,6 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=0):
                      ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(selected_visit_ids)} AND js.is_session = 0 AND js.is_domain = 0;
                      """
 
-
     else:
         query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
                      FROM javascript_cookies as js LEFT JOIN site_visits as sv
@@ -351,6 +351,10 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=0):
                              ON sv.visit_id = js.visit_id  WHERE visit_id > 0 AND js.is_session = 0;
                              """
 
+    if max_rank is not None:
+        query += " AND visit_id <= %i" % max_rank
+
+    print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
         num_cookie_total += 1
         visit_id = row["visit_id"]
@@ -363,7 +367,6 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=0):
         creationtime = row["creationTime"]
         expiry = row["expiry"]
         host = row["host"]
-
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
@@ -411,7 +414,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=0):
 
     num_cookie_setters = len(tracker_urls)
 
-
+    print("get_cookies done, saving results")
     cookie_feat_dict = {
         NUM_COOKIE_SETTERS: num_cookie_setters,
         NUM_COOKIE_TOTAL: num_cookie_total,
@@ -441,7 +444,8 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=0):
         fp.write(json_string)
 
 
-def extract_features(db_file, out_csv, max_rank=0, id_urls_map=defaultdict()):
+def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None):
+    print("extract_features")
     """Extract fingerprinting related features from the javascript table
     of the crawl database.
     Although we use script_url to attribute the access or the function call,
@@ -498,7 +502,6 @@ def extract_features(db_file, out_csv, max_rank=0, id_urls_map=defaultdict()):
             js.script_url <> '' AND js.visit_id IN {format(selected_visit_ids)}
             """
 
-
     else:
         query = """SELECT sv.site_url, sv.visit_id,
             js.script_url, js.operation, js.arguments, js.symbol, js.value
@@ -507,10 +510,10 @@ def extract_features(db_file, out_csv, max_rank=0, id_urls_map=defaultdict()):
             js.script_url <> ''
             """
 
-    if max_rank:
-        query += " AND js.visit_id <= %i" % max_rank
+    if max_rank is not None:
+        query += " AND visit_id <= %i" % max_rank
 
-
+    print("Starting feature extraction")
     for row in tqdm(c.execute(query).fetchall()):
         visit_id = row["visit_id"]
         site_url = row["site_url"]
@@ -621,6 +624,7 @@ def extract_features(db_file, out_csv, max_rank=0, id_urls_map=defaultdict()):
         elif symbol in AUDIO_CONTEXT_FUNCS:
             audio_ctx_calls[script_adress][visit_id].add(symbol)
 
+    print("Feature extraction done, saving results")
     canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
                                                       canvas_writes,
                                                       canvas_styles,
@@ -704,6 +708,7 @@ def extract_features(db_file, out_csv, max_rank=0, id_urls_map=defaultdict()):
         json_string = json.dumps(overall_script_ranks, cls=SetEncoder)
         fp.write(json_string)
 
+    print("Finished feature extraction")
 
 MIN_FONT_FP_FONT_COUNT = 50
 
@@ -1027,7 +1032,7 @@ if __name__ == '__main__':
     LIMIT_SITE_RANK = False
     SELECTED_IDS_ONLY = True
     # Only to be used with the home-page only crawls
-    MAX_RANK = 100  # for debugging testing
+    MAX_RANK = 0  # for debugging testing
     if LIMIT_SITE_RANK:
         get_cookies(crawl_db_path, MAX_RANK)
         extract_features(crawl_db_path, out_csv, MAX_RANK)
@@ -1037,7 +1042,6 @@ if __name__ == '__main__':
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         get_cookies(crawl_db_path, selected_visit_ids)
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
-
 
     else:
         get_cookies(crawl_db_path, MAX_RANK)
