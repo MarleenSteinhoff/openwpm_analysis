@@ -300,7 +300,7 @@ SENSOR_FEATURES = [
  """
 
 
-def get_cookies(db_file, id_urls_map=pd.DataFrame, max_rank=0):
+def get_cookies(db_file, id_urls_map=tuple(), max_rank=0):
     # database conn
     db = sqlite3.connect(db_file)
     db.row_factory = sqlite3.Row
@@ -318,24 +318,37 @@ def get_cookies(db_file, id_urls_map=pd.DataFrame, max_rank=0):
     tracker_urls = set()
     tracking_cookie_invalid_date = defaultdict(set)
 
-    if not id_urls_map.empty:
-        selected_visit_ids = tuple(id_urls_map['visit_id'].tolist())
+    if id_urls_map:
 
+        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
+                     FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(selected_visit_ids)} AND js.is_session = 1;
+                     """
+        session_df = pd.read_sql_query(query_session, db)
+        num_session_cookies = session_df["visit_id"].size
+
+        # no session and domain cookies
         query = f"""SELECT js.visit_id, js.is_http_only, 
             js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
             js.policy, js.host, js.is_domain, 
             js.is_secure,  js.change, sv.site_url
                      FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(selected_visit_ids)}
+                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(selected_visit_ids)} AND js.is_session = 0 AND js.is_domain = 0;
                      """
 
+
     else:
+        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
+                     FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                     ON sv.visit_id = js.visit_id WHERE js.is_session = 1;
+                     """
+
         query = """SELECT js.visit_id, js.is_http_only, 
                     js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
                     js.policy, js.host, js.is_domain, 
                     js.is_secure,  js.change, sv.site_url
                              FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                             ON sv.visit_id = js.visit_id  WHERE visit_id > 0
+                             ON sv.visit_id = js.visit_id  WHERE visit_id > 0 AND js.is_session = 0;
                              """
 
     for row in tqdm(c.execute(query).fetchall()):
@@ -351,9 +364,6 @@ def get_cookies(db_file, id_urls_map=pd.DataFrame, max_rank=0):
         expiry = row["expiry"]
         host = row["host"]
 
-        if is_session == 1:
-            num_session_cookies += 1
-            continue
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
@@ -479,7 +489,7 @@ def extract_features(db_file, out_csv, max_rank=0, id_urls_map=defaultdict()):
     connection.row_factory = sqlite3.Row
     c = connection.cursor()
 
-    if not id_urls_map.empty:
+    if id_urls_map:
         selected_visit_ids = tuple(id_urls_map['visit_id'].tolist())
         query = f"""SELECT sv.site_url, sv.visit_id,
             js.script_url, js.operation, js.arguments, js.symbol, js.value
@@ -999,10 +1009,10 @@ python extract_features.py extract_frequencies_only
 """
 if __name__ == '__main__':
     t0 = time.time()
-    crawl_dir = sys.argv[1]
-    #crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
-    OUT_DIR = sys.argv[2]
-    #OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
+    #crawl_dir = sys.argv[1]
+    crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
+    #OUT_DIR = sys.argv[2]
+    OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
     out_csv = join(OUTDIR, "features.csv")
 
     crawl_dir = get_crawl_dir(crawl_dir)
@@ -1024,8 +1034,9 @@ if __name__ == '__main__':
 
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
-        get_cookies(crawl_db_path, selected_ids)
-        extract_features(crawl_db_path, out_csv, selected_ids)
+        selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
+        get_cookies(crawl_db_path, selected_visit_ids)
+        extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
 
     else:

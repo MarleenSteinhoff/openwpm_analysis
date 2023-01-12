@@ -2,6 +2,7 @@ from tld import get_fld
 from urllib.parse import urlparse
 import ipaddress
 import json
+import os
 from datetime import datetime
 
 
@@ -40,8 +41,10 @@ def is_third_party(url, site_url):
 
 def get_disconnect_blocked_hosts():
     blocked_hosts = set()
+    __location__ = os.path.realpath(
+        os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
-    with open("services.json", 'r') as j:
+    with open(os.path.join(__location__, 'bundled-resource.jpg'), 'r') as j:
         disconnect = json.loads(j.read())
 
     #disconnect = json.loads(open(disconnect_json).read())
