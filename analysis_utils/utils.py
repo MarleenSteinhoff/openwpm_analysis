@@ -84,7 +84,7 @@ def is_blocked_by_disconnect(url, disconnect_blocked_hosts):
             return False
         if host in disconnect_blocked_hosts:
             return True
-    return False  # this shouldn't happen unless we are provided a corrupt hostname
+        return False  # this shouldn't happen unless we are provided a corrupt hostname
 
 
 if __name__ == '__main__':
