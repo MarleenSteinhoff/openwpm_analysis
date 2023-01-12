@@ -38,7 +38,7 @@ def is_third_party(url, site_url):
 
     return True
 
-DISCONNECT_JSON = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/analysis_utils/services.json"
+DISCONNECT_JSON = "services.json"
 def get_disconnect_blocked_hosts(disconnect_json=DISCONNECT_JSON):
     blocked_hosts = set()
 
