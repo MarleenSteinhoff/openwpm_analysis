@@ -68,10 +68,21 @@ def is_blocked_by_disconnect_old(url, disconnect_blocked_hosts):
 
 def get_delta_timespan(creationtime, expiry):
     date_format = "%Y-%m-%d %H:%M:%S"
-    a = datetime.strptime(creationtime, date_format)
-    b = datetime.strptime(expiry, date_format)
-    delta = b - a
-    return delta.days
+
+    try:
+        a = datetime.strptime(creationtime, date_format)
+        b = datetime.strptime(expiry, date_format)
+        delta = b - a
+        return delta.days
+    except ValueError:
+        a = creationtime.split("-")[0]
+        b = expiry.split("-")[0]
+        delta = int(b) - int(a)
+
+        if delta >= 1:
+            return delta*365
+        else:
+            return 0
 
 def is_blocked_by_disconnect(url, disconnect_blocked_hosts):
     host = urlparse(url).hostname

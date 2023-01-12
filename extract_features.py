@@ -316,6 +316,7 @@ def get_cookies(db_file, id_urls_map=pd.DataFrame, max_rank=0):
     tracking_site_urls = defaultdict()
     site_url_host_mapping = defaultdict(set)
     tracker_urls = set()
+    tracking_cookie_invalid_date = defaultdict(set)
 
     if not id_urls_map.empty:
         selected_visit_ids = tuple(id_urls_map['visit_id'].tolist())
@@ -356,6 +357,15 @@ def get_cookies(db_file, id_urls_map=pd.DataFrame, max_rank=0):
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
+            if creationtime == "Invalid Date" or expiry == "Invalid Date":
+                if site_url in tracking_cookie_invalid_date:
+                    tracking_cookie_invalid_date[site_url] = value
+                else:
+                    tracking_cookie_invalid_date[site_url].add(value)
+
+                print("invalid date")
+                continue
+
             timespan = get_delta_timespan(creationtime, expiry)
             if timespan < 90:
                 continue
@@ -407,6 +417,10 @@ def get_cookies(db_file, id_urls_map=pd.DataFrame, max_rank=0):
         COOKIE_SETTERS: tracker_urls,
         TRACKING_SITE_URLS: tracking_site_urls
     }
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "tracking_cookie_invalid_date.json")), 'w') as fp:
+        json_string = json.dumps(tracking_cookie_invalid_date, indent=4, cls=SetEncoder)
+        fp.write(json_string)
 
     with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "cookie_features.json")), 'w') as fp:
         json_string = json.dumps(cookie_feat_dict, indent=4, cls=SetEncoder)
