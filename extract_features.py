@@ -86,8 +86,7 @@ def get_event_feature(arguments, symbol):
         return "addEventListener_" + event_name
     else:  # custom event
         if DEBUG and event_name != "test":
-            print()
-            "Custom Event:", event_name
+            print("Custom Event:", event_name)
         return "addEventListener_CUSTOM_EVENT"
 
 

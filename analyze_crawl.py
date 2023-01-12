@@ -9,9 +9,8 @@ from collections import defaultdict
 import crawl_utils.domain_utils as du
 
 import pandas as pd
-
 import util
-from analysis.util import get_visit_id_site_url_mapping
+from util import get_visit_id_site_url_mapping
 from db_schema import (HTTP_REQUESTS_TABLE,
                        HTTP_RESPONSES_TABLE, JAVASCRIPT_TABLE, OPENWPM_TABLES)
 from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
