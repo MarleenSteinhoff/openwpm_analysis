@@ -1,0 +1,9 @@
+{
+    "num_cookie_total": 66095,
+    "num_session_cookies": 8290,
+    "num_tracking_cookies": 1505,
+    "num_http_cookies": 5332,
+    "num_very_long_cookie": 1169,
+    "num_long_cookie": 336,
+    "num_crawled_urls": 948
+}

@@ -2,8 +2,7 @@ from tld import get_fld
 from urllib.parse import urlparse
 import ipaddress
 import json
-
-DISCONNECT_JSON = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/analysis_utils/services.json"
+from datetime import datetime
 
 
 def get_ps1_or_host(url):
@@ -39,7 +38,7 @@ def is_third_party(url, site_url):
 
     return True
 
-
+DISCONNECT_JSON = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/analysis_utils/services.json"
 def get_disconnect_blocked_hosts(disconnect_json=DISCONNECT_JSON):
     blocked_hosts = set()
 
@@ -67,6 +66,12 @@ def get_disconnect_blocked_hosts(disconnect_json=DISCONNECT_JSON):
 def is_blocked_by_disconnect_old(url, disconnect_blocked_hosts):
     return urlparse(url).hostname in disconnect_blocked_hosts
 
+def get_delta_timespan(creationtime, expiry):
+    date_format = "%Y-%m-%d %H:%M:%S"
+    a = datetime.strptime(creationtime, date_format)
+    b = datetime.strptime(expiry, date_format)
+    delta = b - a
+    return delta.days
 
 def is_blocked_by_disconnect(url, disconnect_blocked_hosts):
     host = urlparse(url).hostname

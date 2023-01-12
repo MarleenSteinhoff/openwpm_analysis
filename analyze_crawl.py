@@ -1,22 +1,19 @@
 import os
 import json
-import sys
 import sqlite3
-import traceback
-from sqlite3 import OperationalError
-import unicodedata as unicode
 from tqdm import tqdm
 import re
 from time import time
 from os.path import join, basename, sep, isdir
 from collections import defaultdict
 import crawl_utils.domain_utils as du
+
 import pandas as pd
 
 import util
+from analysis.util import get_visit_id_site_url_mapping
 from db_schema import (HTTP_REQUESTS_TABLE,
-                       HTTP_RESPONSES_TABLE, SITE_VISITS_TABLE,
-                       JAVASCRIPT_TABLE, OPENWPM_TABLES)
+                       HTTP_RESPONSES_TABLE, JAVASCRIPT_TABLE, OPENWPM_TABLES)
 from util import dump_as_json, get_table_and_column_names, get_crawl_dir, \
     get_crawl_db_path
 
@@ -34,7 +31,7 @@ class CrawlDBAnalysis(object):
         self.init_out_dir()
 
         # mappings and selected ids
-        self.visit_id_site_urls = self.get_visit_id_site_url_mapping()
+        self.visit_id_site_urls = get_visit_id_site_url_mapping(self.db_conn)
         self.visit_ids = self.visit_id_site_urls['visit_id'].tolist()
         self.suc_urls = defaultdict()
         self.num_suc_urls = defaultdict()
@@ -123,44 +120,11 @@ class CrawlDBAnalysis(object):
         self.run_streaming_analysis_for_table(HTTP_RESPONSES_TABLE)
         self.run_streaming_analysis_for_table(JAVASCRIPT_TABLE)
 
-    # run get_url_visit_id_mapping for a subset of given urls
-    # analysis will be performed with the given URLs only
-    def get_visit_id_site_url_mapping(self):
-        cur = self.db_conn.cursor()
-        # TODO: set json file as varibale
-        visit_ids = pd.read_json('suc_urls_24.json')
-        visit_ids.columns = ['url']
 
-        data = tuple(visit_ids)
-        with open('suc_urls_24.json') as json_file:
-            data = json.load(json_file)
-        # selected URLs
-        site_urls = tuple(data)
-
-        query = f'SELECT visit_id, site_url FROM site_visits WHERE site_url IN {format(site_urls)}'
-        # get selected URLs with corresponding visit_ids from database
-        visit_id_site_urls = pd.read_sql_query(query, self.db_conn)
-        print(len(data), "URLs in the given URL list")
-        print(len(visit_id_site_urls), "visit_id-mappings found to the given list")
-
-        return visit_id_site_urls
-
-    def get_visit_id_http_status_mapping(self):
-        visit_id_http_status = {}
-        for visit_id, response_status in self.db_conn.execute(
-                "SELECT visit_id, response_status FROM http_responses"):
-            if response_status == 200:
-                visit_id_http_status[visit_id] = response_status
-            else:
-                continue
-
-        print(len(visit_id_http_status), "mappings")
-        print("Distinct site urls", len(set(visit_id_http_status.values())))
-        return visit_id_http_status
 
     def get_url_eff(self):
         t0 = time()
-        url_dict = self.get_visit_id_site_url_mapping()
+        url_dict = get_visit_id_site_url_mapping(self.db_conn)
         url = pd.DataFrame(list(url_dict.items()), columns=['visit_id', "site_url"], index=url_dict.keys())
 
         http_dict = self.get_visit_id_http_status_mapping()

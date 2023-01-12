@@ -3,28 +3,35 @@
 # pip install adblockparser
 
 import sys
+from analyze_crawl import get_crawl_db_path, get_crawl_dir
+import ast
 import sqlite3
+from tqdm import tqdm
+import re
 import time
 import json
+from datetime import datetime
 import pandas as pd
 import pickle
 from functools import reduce
 from urllib.parse import urlparse
-from os.path import realpath, join
+from os.path import realpath, join, basename, sep
 from _collections import defaultdict
 
 # https://github.com/scrapinghub/adblockparser
 from adblockparser import AdblockRules
-from util import dump_as_json
+from analysis_utils import BlockListParser
+from util import dump_as_json, get_visit_id_http_status_mapping, get_successfull_crawled_ids, \
+    get_visit_id_site_url_mapping
 from analysis_utils.utils import (is_third_party, is_blocked_by_disconnect,
-                                  get_disconnect_blocked_hosts)
-from analysis_utils.utils import get_ps1_or_host
+                                  get_disconnect_blocked_hosts, get_delta_timespan)
 
+OUTDIR = ""
+CRAWL_NAME = ""
 DEBUG = False
 
 # search for the occurences of ublock after enabling this switch
 ENABLE_UBLOCK = False
-
 # Only lookup scripts with sensor access
 CHECK_ADBLOCK_STATUS_OF_ALL_JS = True  # False means we only check
 # scripts with sensor access
@@ -132,6 +139,56 @@ BATTERY_CHARGING_TIME_CALLS = ["BatteryManager.chargingTime",
 # Functions to get the discharging time
 BATTERY_DISCHARGING_TIME_CALLS = ["BatteryManager.dischargingTime",
                                   "BatteryManager.ondischargingtimechange"]
+# cookie features
+NUM_COOKIE_SETTERS = "num_cookie_setters"
+NUM_COOKIE_TOTAL = "num_cookie_total"
+NUM_SESSION_COOKIES = "num_session_cookies"
+NUM_TRACKING_COOKIES = "num_tracking_cookies"
+NUM_HTTP_COOKIES = "num_http_cookies"
+NUM_VERY_LONG_COOKIE = "num_very_long_cookie"
+NUM_LONG_COOKIE = "num_long_cookie"
+NUM_CRAWLED_URLS = "num_crawled_urls"
+COOKIE_SETTERS = "cookie_setters"
+
+PER_JS_COOKIES = "per_js_cookies"
+PER_COOKIE_TOTAL = "per_cookie_total"
+PER_SESSION_COOKIES = "per_session_cookies"
+PER_TRACKING_COOKIES = "per_tracking_cookies"
+PER_HTTP_COOKIES = "per_http_cookies"
+PER_HTTP_ONLY = "per_http_only"
+PER_VERY_LONG_COOKIE = "per_very_long_cookie"
+PER_LONG_COOKIE = "per_long_cookie"
+
+TRACKING_SITE_URLS = "tracking_site_urls"
+SITEURL_COOKIE_MAPPING = "siteurl_cookie_mapping"
+
+# count high level features
+NUM_CANVAS_FP = "num_canvas_fingerprinting"
+NUM_CANVAS_FONT_FP = "num_canvas_font_fingerprinting"
+NUM_AUDIO_CTX_FP = "num_audio_context_fingerprinting"
+NUM_WEBRTC_FP = "num_webrtc_fingerprinting"
+NUM_BATTERY_FP = "num_battery_fingerprinting"
+NUM_TRIGGERS_REQUEST = "num_triggers_requests"
+NUM_TRIGGERS_TP_REQUEST = "num_triggers_third_party_requests"
+NUM_EASYLIST_BLOCKED = "num_easylist_blocked"
+NUM_EASYPRIVACY_BLOCKED = "num_easyprivacy_blocked"
+# NUM_UBLOCK_ORIGIN_BLOCKED = "num_ublockorigin_blocked"
+NUM_DISCONNECT_BLOCKED = "num_disconnect_blocked"
+NUM_THIRD_PARTY_SCRIPT = "num_third_party_script"
+
+COUNT_FEATURES = [NUM_CANVAS_FP, NUM_CANVAS_FONT_FP, NUM_AUDIO_CTX_FP,
+                  NUM_WEBRTC_FP, NUM_BATTERY_FP,
+                  NUM_TRIGGERS_REQUEST, NUM_TRIGGERS_TP_REQUEST,
+                  NUM_EASYLIST_BLOCKED, NUM_EASYPRIVACY_BLOCKED,
+                  # UBLOCK_ORIGIN_BLOCKED,
+                  NUM_DISCONNECT_BLOCKED,
+                  NUM_THIRD_PARTY_SCRIPT]
+# Cookie features
+FB_COOKIEMONSTER_BLOCKED = "cookiemonster_blocked"
+JS_COOKIES = "javascript_cookies"
+TRACKING_COOKIES = "tracking_cookies"
+HTTP_COOKIES = "http_cookies"
+THRD_PARTY_COOKIES = "third_party_cookies"
 
 # High level features
 CANVAS_FP = "canvas_fingerprinting"
@@ -197,6 +254,8 @@ def is_get_image_data_dimensions_too_small(arguments):
 
 def get_base_script_url(script_url):
     return script_url.split("//")[1].split("/")[0]
+
+
 def get_script_freqs_from_db(db_file, max_rank=None):
     """Return a frequency count for each script."""
     connection = sqlite3.connect(db_file)
@@ -235,64 +294,132 @@ SENSOR_FEATURES = [
     "addEventListener_devicemotion"
     # ,"addEventListener_userproximity"
 ]
+"""
+    #query = "SELECT * FROM javascript_cookies"
+    js_cookies = pd.read_sql_query(query, connection)
+    b = js_cookies.loc[js_cookies["is_session"] == 1]
+    d = js_cookies.size
+ """
 
 
-def get_cookies(db_file, max_rank=0):
-    easylist_rules, easyprivacy_rules, ublock_rules, cookie_rules = get_adblock_rules()
-    cookies_on_host = defaultdict(set)
-    fanboy_blocked_cookies = set()
-    cookie_checked_hosts = set()  # to prevent repeated lookups
-    connection = sqlite3.connect(db_file)
-    connection.row_factory = sqlite3.Row
-    c = connection.cursor()
-    query = """SELECT *
-            FROM javascript_cookies as js 
-            """
+def get_cookies(db_file, id_urls_map=pd.DataFrame, max_rank=0):
+    # database conn
+    db = sqlite3.connect(db_file)
+    db.row_factory = sqlite3.Row
+    c = db.cursor()
 
-    cookies = pd.read_sql_query(query, connection)
+    num_cookie_total = 0
+    num_session_cookies = 0
+    num_tracking_cookies = 0
+    num_http_cookies = 0
+    num_very_long_cookie = 0
+    num_long_cookie = 0
+    num_crawled_urls = len(get_successfull_crawled_ids(db))
+    tracking_site_urls = defaultdict()
+    site_url_host_mapping = defaultdict(set)
+    tracker_urls = set()
 
-    if max_rank:
-        query += " AND js.visit_id <= %i" % max_rank
+    if not id_urls_map.empty:
+        selected_visit_ids = tuple(id_urls_map['visit_id'].tolist())
 
-    for row in c.execute(query):
-        #print(row.keys())
+        query = f"""SELECT js.visit_id, js.is_http_only, 
+            js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
+            js.policy, js.host, js.is_domain, 
+            js.is_secure,  js.change, sv.site_url
+                     FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(selected_visit_ids)}
+                     """
+
+    else:
+        query = """SELECT js.visit_id, js.is_http_only, 
+                    js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
+                    js.policy, js.host, js.is_domain, 
+                    js.is_secure,  js.change, sv.site_url
+                             FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                             ON sv.visit_id = js.visit_id  WHERE visit_id > 0
+                             """
+
+    for row in tqdm(c.execute(query).fetchall()):
+        num_cookie_total += 1
         visit_id = row["visit_id"]
         is_http_only = row["is_http_only"]
-        name = row["name"]
-        path = row["path"]
         value = row["value"]
         is_session = row["is_session"]
-        policy = row["policy"]
-        host = row["host"]
         is_domain = row["is_domain"]
-        is_secure = row["is_secure"]
         change = row["change"]
-        raw_host = row["raw_host"]
+        site_url = row["site_url"]
+        creationtime = row["creationTime"]
+        expiry = row["expiry"]
+        host = row["host"]
 
-        # print(visit_id, is_http_only, name, path, value, is_session, policy, host, is_domain, is_secure)
-        is_tracking_cookie = False
-        if change == "added" and value not in cookie_checked_hosts:
-            print("chaaangin")
-            cookie_checked_hosts.add(value)
-            # Some (most?) adblock rules only match third parties.
-            # We need to pass the options to avoid false negatives
-            # https://pypi.python.org/pypi/adblockparser
+        if is_session == 1:
+            num_session_cookies += 1
+            continue
 
-            if not cookie_rules.should_block(value):
-                print(".")
-            if cookie_rules.should_block(value):
-                print(value)
-            if cookie_rules.should_block(raw_host):
-                print(raw_host)
+        if is_domain == 0:
+            # (1) the cookie has an expiration date over 90 days in the future
+            timespan = get_delta_timespan(creationtime, expiry)
+            if timespan < 90:
+                continue
 
-            if cookie_rules.should_block(value, {'script': True, 'raw_host': raw_host}):
-                print("HO!")
-                is_tracking_cookie = True
-                fanboy_blocked_cookies.add(value)
-                cookies_on_host[raw_host] = value
+            # (2) 8 ≤ length(parameter-value) ≤ 100 CHANGED
+            length = len(value)
+            if (length < 8) or (length > 150):
+                continue
+
+            # (3) the parametervalue remains the same throughout the measurement
+            if change == "changed" or change == "deleted":
+                continue
+
+            else:
+                if is_http_only == 1:
+                    num_http_cookies += 1
+
+                if timespan >= 365:
+                    num_very_long_cookie += 1
+                else:
+                    num_long_cookie += 1
+
+                num_tracking_cookies += 1
+                tracker_urls.add(site_url)
+                try:
+                    tracking_site_urls[site_url] += 1
+                except KeyError:
+                    tracking_site_urls[site_url] = 0
+                try:
+                    site_url_host_mapping[site_url].add(host)
+                except KeyError:
+                    site_url_host_mapping[site_url] = host
+
+    num_cookie_setters = len(tracker_urls)
 
 
-def extract_features(db_file, out_csv, max_rank=0):
+    cookie_feat_dict = {
+        NUM_COOKIE_SETTERS: num_cookie_setters,
+        NUM_COOKIE_TOTAL: num_cookie_total,
+        NUM_SESSION_COOKIES: num_session_cookies,
+        NUM_TRACKING_COOKIES: num_tracking_cookies,
+        NUM_HTTP_COOKIES: num_http_cookies,
+        NUM_VERY_LONG_COOKIE: num_very_long_cookie,
+        NUM_LONG_COOKIE: num_long_cookie,
+        NUM_CRAWLED_URLS: num_crawled_urls,
+    }
+
+    tracking_sites_dict = {
+        COOKIE_SETTERS: tracker_urls,
+        TRACKING_SITE_URLS: tracking_site_urls
+    }
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "cookie_features.json")), 'w') as fp:
+        json_string = json.dumps(cookie_feat_dict, indent=4, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "tracking_sites_dict.json")), 'w') as fp:
+        json_string = json.dumps(tracking_sites_dict, indent=4, cls=SetEncoder)
+        fp.write(json_string)
+
+
+def extract_features(db_file, out_csv, max_rank=0, id_urls_map=defaultdict()):
     """Extract fingerprinting related features from the javascript table
     of the crawl database.
     Although we use script_url to attribute the access or the function call,
@@ -328,7 +455,8 @@ def extract_features(db_file, out_csv, max_rank=0):
     easyprivacy_blocked_scripts = set()
     ublock_blocked_scripts = set()
     disconnect_blocked_scripts = set()
-    easylist_rules, easyprivacy_rules, ublock_rules, cookie_rules = get_adblock_rules()
+    cookiemonster_blocked_scripts = set()
+    easylist_rules, easyprivacy_rules, ublock_rules = get_adblock_rules()
     disconnect_blocklist = get_disconnect_blocked_hosts()
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
@@ -339,17 +467,29 @@ def extract_features(db_file, out_csv, max_rank=0):
     connection.row_factory = sqlite3.Row
     c = connection.cursor()
 
-    query = """SELECT sv.site_url, sv.visit_id,
-        js.script_url, js.operation, js.arguments, js.symbol, js.value
-        FROM javascript as js LEFT JOIN site_visits as sv
-        ON sv.visit_id = js.visit_id WHERE
-        js.script_url <> ''
-        """
+    if not id_urls_map.empty:
+        selected_visit_ids = tuple(id_urls_map['visit_id'].tolist())
+        query = f"""SELECT sv.site_url, sv.visit_id,
+            js.script_url, js.operation, js.arguments, js.symbol, js.value
+            FROM javascript as js LEFT JOIN site_visits as sv
+            ON sv.visit_id = js.visit_id WHERE
+            js.script_url <> '' AND js.visit_id IN {format(selected_visit_ids)}
+            """
+
+
+    else:
+        query = """SELECT sv.site_url, sv.visit_id,
+            js.script_url, js.operation, js.arguments, js.symbol, js.value
+            FROM javascript as js LEFT JOIN site_visits as sv
+            ON sv.visit_id = js.visit_id WHERE
+            js.script_url <> ''
+            """
 
     if max_rank:
         query += " AND js.visit_id <= %i" % max_rank
 
-    for row in c.execute(query):
+
+    for row in tqdm(c.execute(query).fetchall()):
         visit_id = row["visit_id"]
         site_url = row["site_url"]
         script_url = row["script_url"]
@@ -370,6 +510,8 @@ def extract_features(db_file, out_csv, max_rank=0):
             third_party_scripts.add(script_adress)
             third_party_script = True
 
+
+
         # get the simple feature for this call
         feat = get_simple_feature_from_js_info(operation, arguments, symbol)
         if feat is not None:
@@ -377,21 +519,11 @@ def extract_features(db_file, out_csv, max_rank=0):
 
         script_ranks[script_adress].add(visit_id)
 
-        #if feat in SENSOR_FEATURES:
-        #    script_domain = get_ps1_or_host(script_url)
-        #    sensor_visit_ids[feat].add(visit_id)
-        #    sensor_script_domain_visit_ids[feat][script_domain].add(visit_id)
-        #    sensor_script_url_visit_ids[feat][script_adress].add(visit_id)
-
         # Check easylist and easyprivacy blocked status
         # if we didn't do it for this script url before
-        if (CHECK_ADBLOCK_STATUS_OF_ALL_JS or feat in SENSOR_FEATURES) and \
-                script_url not in adblock_checked_scripts:
-            print("in if")
-            adblock_checked_scripts.add(script_url)
-            # Some (most?) adblock rules only match third parties.
-            # We need to pass the options to avoid false negatives
-            # https://pypi.python.org/pypi/adblockparser
+
+        if script_url not in adblock_checked_scripts:
+
             if easylist_rules.should_block(
                     script_url, {'script': True,
                                  'third-party': third_party_script}):
@@ -508,16 +640,48 @@ def extract_features(db_file, out_csv, max_rank=0):
         TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
         EASYLIST_BLOCKED: easylist_blocked_scripts,
         EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
+        FB_COOKIEMONSTER_BLOCKED: cookiemonster_blocked_scripts,
         # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
         DISCONNECT_BLOCKED: disconnect_blocked_scripts,
         THIRD_PARTY_SCRIPT: third_party_scripts
     }
 
-    sorted_feature_list = get_sorted_feature_list(script_features)
-    write_feats_to_csv(script_features,
-                       sorted_feature_list, high_level_feat_dict,
-                       script_ranks,
-                       overall_script_ranks, out_csv)
+    count_dict = {
+        NUM_CANVAS_FP: len(canvas_fingerprinters),
+        NUM_CANVAS_FONT_FP: len(canvas_font_fingerprinters),
+        NUM_AUDIO_CTX_FP: len(audio_ctx_fingerprinters),
+        NUM_WEBRTC_FP: len(webrtc_fingerprinters),
+        NUM_BATTERY_FP: len(battery_fingerprinters),
+        NUM_TRIGGERS_REQUEST: len(request_triggering_scripts),
+        NUM_TRIGGERS_TP_REQUEST: len(third_party_request_triggering_scripts),
+        NUM_EASYLIST_BLOCKED: len(easylist_blocked_scripts),
+        NUM_EASYPRIVACY_BLOCKED: len(easyprivacy_blocked_scripts),
+
+        # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
+        NUM_DISCONNECT_BLOCKED: len(disconnect_blocked_scripts),
+        NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts)
+    }
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "count_features.json")), 'w') as fp:
+        json_string = json.dumps(count_dict, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_features.json")), 'w') as fp:
+        json_string = json.dumps(script_features, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "high_level_feat_dict.json")), 'w') as fp:
+        json_string = json.dumps(high_level_feat_dict, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_ranks.json")), 'w') as fp:
+        json_string = json.dumps(script_ranks, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "overall_script_ranks.json")), 'w') as fp:
+        json_string = json.dumps(overall_script_ranks, cls=SetEncoder)
+        fp.write(json_string)
+
 
 MIN_FONT_FP_FONT_COUNT = 50
 
@@ -627,8 +791,8 @@ def get_webrtc_fingerprinters(webrtc_calls_dict):
             # +1 for set onicecandidate
             if len(webrtc_calls) == len(WEBRTC_FP_CALLS) + 1:
                 webrtc_fingerprinters.add(script_adress)
-                #print(("WebRTC fingerprinter:", script_adress,
-                 #      "visit#", visit_id))
+                # print(("WebRTC fingerprinter:", script_adress,
+                #      "visit#", visit_id))
                 break
     return webrtc_fingerprinters
 
@@ -647,6 +811,8 @@ def get_audio_ctx_fingerprinters(audio_ctx_calls_dict):
                        "visit#", visit_id))
                 break
     return audio_context_fingerprinters
+
+
 
 
 MIN_CANVAS_STYLE_CALLS = 0
@@ -730,24 +896,28 @@ def read_ab_rules_from_file(filename):
     return filter_list
 
 
+def get_cookie_rules():
+    raw_cookie_rules = read_ab_rules_from_file("analysis_utils/fanboy-cookiemonster.txt")
+    cookie_rules = AdblockRules(raw_cookie_rules)
+    return cookie_rules
+
+
 def get_adblock_rules():
     raw_easylist_rules = read_ab_rules_from_file("analysis_utils/easylist.txt")
     raw_easyprivacy_rules = read_ab_rules_from_file("analysis_utils/easyprivacy.txt")
-    raw_cookie_rules = read_ab_rules_from_file("analysis_utils/fanboy-cookiemonster.txt")
     if ENABLE_UBLOCK:
         raw_ublock_rules = read_ab_rules_from_file("analysis_utils/adblock_blacklist_white.txt")
     else:
         raw_ublock_rules = []
-    print(("Loaded %s from EasyList, %s rules from EasyPrivacy, %s from Cookiemonster"
+    print(("Loaded %s from EasyList, %s rules from EasyPrivacy"
            " and %s rules from UBlockOrigin" %
-           (len(raw_easylist_rules), len(raw_easyprivacy_rules), len(raw_cookie_rules),
+           (len(raw_easylist_rules), len(raw_easyprivacy_rules),
             len(raw_ublock_rules))))
     easylist_rules = AdblockRules(raw_easylist_rules)
     easyprivacy_rules = AdblockRules(raw_easyprivacy_rules)
     ublock_rules = AdblockRules(raw_ublock_rules)
-    cookie_rules = AdblockRules(raw_cookie_rules)
 
-    return easylist_rules, easyprivacy_rules, ublock_rules, cookie_rules
+    return easylist_rules, easyprivacy_rules, ublock_rules
 
 
 def write_feats_to_csv(script_features,
@@ -817,24 +987,39 @@ python extract_features.py extract_frequencies_only
 """
 if __name__ == '__main__':
     t0 = time.time()
-    out_csv = "features.csv"
-    db = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/2018-06.sqlite"
+    crawl_dir = sys.argv[1]
+    #crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
+    OUT_DIR = sys.argv[2]
+    #OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
+    out_csv = join(OUTDIR, "features.csv")
 
+    crawl_dir = get_crawl_dir(crawl_dir)
+    crawl_name = basename(crawl_dir.rstrip(sep))
+    crawl_db_path = get_crawl_db_path(crawl_dir)
+    CRAWL_NAME = crawl_db_path.rsplit('/', 1)[-1].split(".sqlite")[0]
     if "extract_frequencies_only" in sys.argv:
-        script_freqs = get_script_freqs_from_db(db)
+        script_freqs = get_script_freqs_from_db(crawl_db_path)
         write_script_visit_ids(script_freqs, 'script_visit_ids.csv')
         sys.exit(0)
     ########################################
-    LIMIT_SITE_RANK = False  # Only to be used with the home-page only crawls
-    MAX_RANK = 10000  # for debugging testing
+    LIMIT_SITE_RANK = False
+    SELECTED_IDS_ONLY = True
+    # Only to be used with the home-page only crawls
+    MAX_RANK = 100  # for debugging testing
     if LIMIT_SITE_RANK:
-        extract_features(db, out_csv, MAX_RANK)
+        get_cookies(crawl_db_path, MAX_RANK)
+        extract_features(crawl_db_path, out_csv, MAX_RANK)
+
+    if SELECTED_IDS_ONLY:
+        selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
+        get_cookies(crawl_db_path, selected_ids)
+        extract_features(crawl_db_path, out_csv, MAX_RANK, selected_ids)
+
+
     else:
-        DB = db
-        DB_NAME = str(DB).split('_')[0].split('/')[8]
-        RESULTS_PATH = join(RESULTS_PATH)
-        get_cookies(db)
-        #extract_features(db, out_csv)  # process all rows
+        get_cookies(crawl_db_path, MAX_RANK)
+        extract_features(crawl_db_path, out_csv)  # process all rows
     ########################################
     print(("Feature extraction completed in", time.time() - t0, "seconds"))
+    print(("JSONs are written into: ", OUT_DIR))
     print(("Features are written into:", realpath(out_csv)))

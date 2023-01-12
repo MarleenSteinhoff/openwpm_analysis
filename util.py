@@ -1,7 +1,10 @@
 import sqlite3
 import json
+import pandas as pd
 from time import time
 from multiprocessing import Process
+
+import pandas
 from tld import get_tld
 import ipaddress
 from os.path import join, isfile,  isdir, dirname
@@ -94,6 +97,28 @@ def is_third_party(req_url, top_level_url):
 
     return (True, req_ps1, site_ps1)
 
+def get_successfull_crawled_ids(db):
+    suc_visit_ids = set()
+    for visit_id, response_status in db.execute(
+        "SELECT visit_id, response_status FROM http_responses"):
+        if response_status == 200:
+            suc_visit_ids.add(visit_id)
+        else:
+            continue
+    return suc_visit_ids
+def get_visit_id_http_status_mapping(db):
+    visit_id_http_status = {}
+    for visit_id, response_status in db.execute(
+        "SELECT visit_id, response_status FROM http_responses"):
+        if response_status == 200:
+            visit_id_http_status[visit_id] = response_status
+        else:
+            continue
+
+        print(len(visit_id_http_status), "mappings")
+        print("Distinct site urls", len(set(visit_id_http_status.values())))
+    return visit_id_http_status, len(visit_id_http_status)
+
 
 def copy_if_not_exists(src, dst):
     if not isfile(dst):
@@ -137,3 +162,26 @@ def print_progress(t0, processed, num_rows):
         print("Processed: %iK (%0.2f%%) Speed: %d rows/s | Elapsed %0.2f"\
             " | Remaining %d mins" % (
                 processed/1000, progress, speed, elapsed, remaining / 60))
+
+    # run get_url_visit_id_mapping for a subset of given urls
+    # analysis will be performed with the given URLs only
+def get_visit_id_site_url_mapping(db_file):
+    db_conn = sqlite3.connect(db_file)
+    cur = db_conn.cursor()
+    # TODO: set json file as varibale
+    visit_ids = pd.read_json('suc_urls_24.json')
+    visit_ids.columns = ['url']
+
+    data = tuple(visit_ids)
+    with open('suc_urls_24.json') as json_file:
+        data = json.load(json_file)
+    # selected URLs
+    site_urls = tuple(data)
+
+    query = f'SELECT visit_id, site_url FROM site_visits WHERE site_url IN {format(site_urls)}'
+    # get selected URLs with corresponding visit_ids from database
+    visit_id_site_urls = pd.read_sql_query(query, db_conn)
+    print(len(data), "URLs in the given URL list")
+    print(len(visit_id_site_urls), "visit_id-mappings found to the given list")
+
+    return visit_id_site_urls
