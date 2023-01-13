@@ -319,8 +319,9 @@ def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None, OLD_SCHEME=Fa
     site_url_host_mapping = defaultdict(set)
     tracker_urls = set()
     tracking_cookie_invalid_date = defaultdict(set)
-
+    print("old_scheme", OLD_SCHEME)
     if id_urls_map:
+        print("in id urls map")
         query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
                      FROM javascript_cookies as js LEFT JOIN site_visits as sv
                      ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
