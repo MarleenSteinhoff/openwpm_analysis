@@ -13,18 +13,18 @@ echo "out $ROOT_OUT_DIR"
 
 
 declare -a urls=(
-     'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2019-06_1m_stateless.tar.lz4'
-      'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-05_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-03_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-06_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-08_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-01_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-03_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-06_1m_stateless.tar.lz4'
-      'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-09_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-12_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-02_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-03_1m_stateless.tar.lz4'
+     'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2019-06_1m_stateless.tar.lz4'
+      'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-05_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-03_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-06_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-08_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-01_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-03_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-06_1m_stateless.tar.lz4'
+      'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-09_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-12_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-02_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-03_1m_stateless.tar.lz4'
 )
 
 

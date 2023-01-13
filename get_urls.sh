@@ -39,7 +39,6 @@ declare -a all_urls=(
 declare -a urls_1=(
         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-06_1m_stateless.tar.lz4'
         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-05_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2015-12_1m_stateless.tar.lz4'
          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-11_1m_stateless.tar.lz4'
          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-04_1m_stateless.tar.lz4'
         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-07_1m_stateless.tar.lz4'
