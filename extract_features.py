@@ -301,7 +301,7 @@ SENSOR_FEATURES = [
  """
 
 
-def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None, OLD_SCHEME=False):
+def get_cookies(db_file, id_urls_map=tuple(), max_rank=None, OLD_SCHEME=False):
     print("get_cookies")
     # database conn
     db = sqlite3.connect(db_file)
@@ -1043,8 +1043,7 @@ if __name__ == '__main__':
         if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
             print("using old db scheme without javascript cookies table")
-            get_cookies(crawl_db_path, selected_ids, MAX_RANK, OLD_SCHEME=True)
-
+            get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK, OLD_SCHEME=True)
 
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
