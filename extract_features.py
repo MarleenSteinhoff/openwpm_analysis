@@ -301,7 +301,7 @@ SENSOR_FEATURES = [
  """
 
 
-def get_cookies(db_file, id_urls_map=tuple(), max_rank=None, OLD_SCHEME=False):
+def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     print("get_cookies")
     # database conn
     db = sqlite3.connect(db_file)
@@ -314,12 +314,12 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None, OLD_SCHEME=False):
     num_http_cookies = 0
     num_very_long_cookie = 0
     num_long_cookie = 0
-    num_crawled_urls = len(get_successfull_crawled_ids(db))
+    num_crawled_urls = len(id_urls_map)
     tracking_site_urls = defaultdict()
     site_url_host_mapping = defaultdict(set)
     tracker_urls = set()
     tracking_cookie_invalid_date = defaultdict(set)
-    print("old_scheme", OLD_SCHEME)
+
 
     print("in id urls map")
     query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
@@ -331,7 +331,8 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None, OLD_SCHEME=False):
     num_session_cookies = session_df["visit_id"].size
     print("session_cookies calculated")
 
-    if OLD_SCHEME:
+    if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+                      "2017-03"]:
         print("old scheme")
         # no session and domain cookies
         query = f"""SELECT js.visit_id,
@@ -998,16 +999,16 @@ python extract_features.py extract_frequencies_only
 """
 if __name__ == '__main__':
     t0 = time.time()
-    crawl_dir = sys.argv[1]
-    #crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
-    OUT_DIR = sys.argv[2]
-    #OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
+    #crawl_dir = sys.argv[1]
+    crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
+    #OUT_DIR = sys.argv[2]
+    OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
     out_csv = join(OUTDIR, "features.csv")
 
     crawl_dir = get_crawl_dir(crawl_dir)
     crawl_name = basename(crawl_dir.rstrip(sep))
     crawl_db_path = get_crawl_db_path(crawl_dir)
-    CRAWL_NAME = crawl_db_path.rsplit('/', 1)[-1].split("_")[0]
+    CRAWL_NAME = crawl_db_path.rsplit('/', 1)[-1].split("_")[0].split(".sqlite")[0]
     if "extract_frequencies_only" in sys.argv:
         script_freqs = get_script_freqs_from_db(crawl_db_path)
         write_script_visit_ids(script_freqs, 'script_visit_ids.csv')
@@ -1024,13 +1025,9 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        # get_cookies(crawl_db_path, selected_visit_ids)
+        get_cookies(crawl_db_path, selected_visit_ids)
         print("crawlname", CRAWL_NAME)
-        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
-                          "2017-03"]:
-            print("using old db scheme without javascript cookies table")
-            get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK, OLD_SCHEME=True)
-
+        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
