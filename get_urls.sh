@@ -13,37 +13,59 @@ echo "Ex Dir $EXTRACTION_DIR"
 echo "CENSUS LZ4 PATH $CENSUS_LZ4_DATA_PATH"
 echo "out $ROOT_OUT"
 
+declare -a all_urls=(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+)
 
 declare -a urls_1=(
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-06_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-07_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-09_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-10_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-12_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-01_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-02_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-03_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-06_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-11_1m_stateless.tar.lz4")
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-06_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-05_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2015-12_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-11_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-04_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-07_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-09_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-02_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-04_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-07_1m_stateless.tar.lz4'
+          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-10_1m_stateless.tar.lz4'
+          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-01_1m_stateless.tar.lz4'
+)
 
 declare -a urls_2=(
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2015-12_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-03_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-04_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-05_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-06_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-07_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-08_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-09_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-01_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-02_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-03_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-04_1m_stateless.tar.lz4"
-        "https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-05_1m_stateless.tar.lz4")
-
-declare -a test=(
-	"https://webtransparency.cs.princeton.edu/webcensus/samples/sample_2018-06_1m_stateless_census_crawl.sqlite.lz4"
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2019-06_1m_stateless.tar.lz4'
+      'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-05_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-03_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-06_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-08_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-01_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-03_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-06_1m_stateless.tar.lz4'
+      'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-09_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-12_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-02_1m_stateless.tar.lz4'
+       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-03_1m_stateless.tar.lz4'
 )
+
 
 function download(){
     echo "Downloading into $CENSUS_LZ4_DATA_PATH"
@@ -79,7 +101,7 @@ function decompress_and_process(){
 }
 
 
-for i in "${test[@]}"
+for i in "${urls_1[@]}"
 do echo "$i"
 download "$i"  
 done
