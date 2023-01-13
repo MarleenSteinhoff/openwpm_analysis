@@ -321,49 +321,34 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None, OLD_SCHEME=False):
     tracking_cookie_invalid_date = defaultdict(set)
     print("old_scheme", OLD_SCHEME)
 
-    if id_urls_map:
-        print("in id urls map")
-        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
+    print("in id urls map")
+    query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
                      FROM javascript_cookies as js LEFT JOIN site_visits as sv
                      ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
                      """
-        session_df = pd.read_sql_query(query_session, db)
-        num_session_cookies = session_df["visit_id"].size
+    session_df = pd.read_sql_query(query_session, db)
+    num_session_cookies = session_df["visit_id"].size
 
-        if OLD_SCHEME:
-            print("old scheme")
-            # no session and domain cookies
-            query = f"""SELECT js.visit_id,
+    if OLD_SCHEME:
+        print("old scheme")
+        # no session and domain cookies
+        query = f"""SELECT js.visit_id,
                        js.name, js.path, js.creationTime, js.expiry, js.value, 
                         js.host, sv.site_url
                                 FROM profile_cookies as js LEFT JOIN site_visits as sv
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} ;
                                 """
 
-        else:
+    else:
 
-            # no session and domain cookies
-            query = f"""SELECT js.visit_id, js.is_http_only, 
+    # no session and domain cookies
+        query = f"""SELECT js.visit_id, js.is_http_only, 
                 js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
                 js.policy, js.host, js.is_domain, 
                 js.is_secure,  js.change, sv.site_url
                          FROM javascript_cookies as js LEFT JOIN site_visits as sv
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
                          """
-
-    else:
-        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
-                     FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                     ON sv.visit_id = js.visit_id WHERE js.is_session = 1;
-                     """
-
-        query = """SELECT js.visit_id, js.is_http_only, 
-                    js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
-                    js.policy, js.host, js.is_domain, 
-                    js.is_secure,  js.change, sv.site_url
-                             FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                             ON sv.visit_id = js.visit_id  WHERE visit_id > 0 AND js.is_session = 0;
-                             """
 
     if max_rank is not None:
         query += " AND visit_id <= %i" % max_rank
