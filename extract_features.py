@@ -481,8 +481,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
     easylist_blocked_scripts = set()
     easyprivacy_blocked_scripts = set()
     disconnect_blocked_scripts = set()
-    easylist_rules, easyprivacy_rules, ublock_rules = get_adblock_rules()
-    disconnect_blocklist = get_disconnect_blocked_hosts()
+    #easylist_rules, easyprivacy_rules, ublock_rules = get_adblock_rules()
+    #disconnect_blocklist = get_disconnect_blocked_hosts()
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
 
