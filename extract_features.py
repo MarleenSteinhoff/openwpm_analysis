@@ -329,6 +329,8 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                         js.host, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                 """
+        print("SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, js.host, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)}")
+
     else:
         print("else")
         query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
@@ -351,7 +353,6 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     if max_rank is not None:
         query += " AND visit_id <= %i" % max_rank
-    print(query)
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
         num_cookie_total += 1
