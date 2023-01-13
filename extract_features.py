@@ -326,8 +326,10 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None, OLD_SCHEME=False):
                      FROM javascript_cookies as js LEFT JOIN site_visits as sv
                      ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
                      """
+
     session_df = pd.read_sql_query(query_session, db)
     num_session_cookies = session_df["visit_id"].size
+    print("session_cookies calculated")
 
     if OLD_SCHEME:
         print("old scheme")
@@ -338,10 +340,9 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None, OLD_SCHEME=False):
                                 FROM profile_cookies as js LEFT JOIN site_visits as sv
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} ;
                                 """
-
     else:
-
-    # no session and domain cookies
+        print("else")
+        # no session and domain cookies
         query = f"""SELECT js.visit_id, js.is_http_only, 
                 js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
                 js.policy, js.host, js.is_domain, 
