@@ -6,6 +6,7 @@ import sys
 from analyze_crawl import get_crawl_db_path, get_crawl_dir
 import ast
 import sqlite3
+from pqdm.processes import pqdm
 from tqdm import tqdm
 import re
 import time
@@ -479,9 +480,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     # To check script URLs against adblock rules
     easylist_blocked_scripts = set()
     easyprivacy_blocked_scripts = set()
-    ublock_blocked_scripts = set()
     disconnect_blocked_scripts = set()
-    cookiemonster_blocked_scripts = set()
     easylist_rules, easyprivacy_rules, ublock_rules = get_adblock_rules()
     disconnect_blocklist = get_disconnect_blocked_hosts()
     adblock_checked_scripts = set()  # to prevent repeated lookups
@@ -544,9 +543,9 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
         script_ranks[script_adress].add(visit_id)
 
+        """
         # Check easylist and easyprivacy blocked status
         # if we didn't do it for this script url before
-
         if script_url not in adblock_checked_scripts:
 
             if easylist_rules.should_block(
@@ -559,13 +558,9 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                                  'third-party': third_party_script}):
                 easyprivacy_blocked_scripts.add(script_adress)
 
-            if ENABLE_UBLOCK:
-                if ublock_rules.should_block(
-                        script_url, {'script': True,
-                                     'third-party': third_party_script}):
-                    ublock_blocked_scripts.add(script_adress)
             if is_blocked_by_disconnect(script_url, disconnect_blocklist):
                 disconnect_blocked_scripts.add(script_adress)
+     """
 
         # High level features
         # Canvas fingerprinting
@@ -666,7 +661,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
         EASYLIST_BLOCKED: easylist_blocked_scripts,
         EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
-        FB_COOKIEMONSTER_BLOCKED: cookiemonster_blocked_scripts,
         # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
         DISCONNECT_BLOCKED: disconnect_blocked_scripts,
         THIRD_PARTY_SCRIPT: third_party_scripts
@@ -1014,10 +1008,10 @@ python extract_features.py extract_frequencies_only
 """
 if __name__ == '__main__':
     t0 = time.time()
-    #crawl_dir = sys.argv[1]
-    crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
-    #OUT_DIR = sys.argv[2]
-    OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
+    crawl_dir = sys.argv[1]
+    #crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
+    OUT_DIR = sys.argv[2]
+    #OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
     out_csv = join(OUTDIR, "features.csv")
 
     crawl_dir = get_crawl_dir(crawl_dir)
@@ -1040,7 +1034,7 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        #get_cookies(crawl_db_path, selected_visit_ids)
+        get_cookies(crawl_db_path, selected_visit_ids)
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
