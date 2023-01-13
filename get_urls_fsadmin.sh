@@ -2,10 +2,10 @@
 #set -e
 
 # Preprocess and analyze compressed crawl databases
-EXTRACTION_DIR="/crawler/analysis"
-CENSUS_LZ4_DATA_PATH="/crawler/analysis/census_data_lz4"
-CODE_DIR="/crawler/openwpm_analysis"
-ROOT_OUT_DIR="/crawler/results_statefull"
+EXTRACTION_DIR="/home/fsadmin/analysis"
+CENSUS_LZ4_DATA_PATH="/home/fsadmin/analysis/census_data_lz4"
+CODE_DIR="/home/fsadmin/openwpm_analysis"
+ROOT_OUT_DIR="/home/fsadmin/results_statefull"
 
 echo "Ex Dir $EXTRACTION_DIR"
 echo "CENSUS LZ4 PATH $CENSUS_LZ4_DATA_PATH"
@@ -54,10 +54,7 @@ function decompress_and_process(){
   time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
   cd $CODE_DIR
   echo "-------------PROCESS START------------"
-  #echo "python analyze_crawl.py $CRAWL_DATA_PATH $ROOT_OUT_DIR"
-  #python analyze_crawl.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
-  echo "python extract_features.py $CRAWL_DATA_PATH $ROOT_OUT_DIR"
-  python extract_features.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
+:
   echo "Will remove $EXTRACTION_DIR/*201*"
   rm -rf $EXTRACTION_DIR/*201*
   echo "Will remove $CENSUS_LZ4_DATA_PATH/*201*"
