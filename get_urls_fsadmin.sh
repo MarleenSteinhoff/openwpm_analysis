@@ -13,19 +13,17 @@ echo "out $ROOT_OUT"
 echo "Downloading into $CENSUS_LZ4_DATA_PATH"
 
 declare -a urls=(
-
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-06_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-05_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2015-12_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-11_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-04_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-07_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-09_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-02_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-04_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-07_1m_stateless.tar.lz4'
-          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2017-10_1m_stateless.tar.lz4'
-          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2018-01_1m_stateless.tar.lz4'
+'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/2016-05_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-06_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-11_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-04_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-07_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-09_1m_stateless.tar.lz4'
+        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-02_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-04_1m_stateless.tar.lz4'
+         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-07_1m_stateless.tar.lz4'
+          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-10_1m_stateless.tar.lz4'
+          'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-01_1m_stateless.tar.lz4'
 
  )
 
@@ -54,7 +52,10 @@ function decompress_and_process(){
   time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
   cd $CODE_DIR
   echo "-------------PROCESS START------------"
-:
+  #echo "python analyze_crawl.py $CRAWL_DATA_PATH $ROOT_OUT_DIR"
+  #python analyze_crawl.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
+  echo "python extract_features.py $CRAWL_DATA_PATH $ROOT_OUT_DIR"
+  python extract_features.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
   echo "Will remove $EXTRACTION_DIR/*201*"
   rm -rf $EXTRACTION_DIR/*201*
   echo "Will remove $CENSUS_LZ4_DATA_PATH/*201*"
@@ -65,3 +66,4 @@ for i in "${urls[@]}"
 do echo "$i"
 download "$i"  
 done
+
