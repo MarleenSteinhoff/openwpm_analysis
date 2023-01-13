@@ -6,6 +6,7 @@ import sys
 from analyze_crawl import get_crawl_db_path, get_crawl_dir
 import ast
 import sqlite3
+from pqdm.processes import pqdm
 from tqdm import tqdm
 import re
 import time
@@ -444,7 +445,7 @@ def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None):
         fp.write(json_string)
 
 
-def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None):
+def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None, OLD_SCHEME=False):
     print("extract_features")
     """Extract fingerprinting related features from the javascript table
     of the crawl database.
@@ -479,9 +480,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     # To check script URLs against adblock rules
     easylist_blocked_scripts = set()
     easyprivacy_blocked_scripts = set()
-    ublock_blocked_scripts = set()
     disconnect_blocked_scripts = set()
-    cookiemonster_blocked_scripts = set()
     easylist_rules, easyprivacy_rules, ublock_rules = get_adblock_rules()
     disconnect_blocklist = get_disconnect_blocked_hosts()
     adblock_checked_scripts = set()  # to prevent repeated lookups
@@ -494,13 +493,20 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     c = connection.cursor()
 
     if id_urls_map:
-
-        query = f"""SELECT sv.site_url, sv.visit_id,
-            js.script_url, js.operation, js.arguments, js.symbol, js.value
-            FROM javascript as js LEFT JOIN site_visits as sv
-            ON sv.visit_id = js.visit_id WHERE
-            js.script_url <> '' AND js.visit_id IN {format(id_urls_map)}
-            """
+        if OLD_SCHEME:
+            query = f"""SELECT sv.site_url, sv.visit_id,
+                js.script_url, js.operation, js.parameter_index, js.parameter_value, js.symbol, js.value
+                FROM javascript as js LEFT JOIN site_visits as sv
+                ON sv.visit_id = js.visit_id WHERE
+                js.script_url <> '' AND js.visit_id IN {format(id_urls_map)}
+                """
+        else:
+            query = f"""SELECT sv.site_url, sv.visit_id,
+                js.script_url, js.operation, js.arguments, js.symbol, js.value
+                FROM javascript as js LEFT JOIN site_visits as sv
+                ON sv.visit_id = js.visit_id WHERE
+                js.script_url <> '' AND js.visit_id IN {format(id_urls_map)}
+                """
 
     else:
         query = """SELECT sv.site_url, sv.visit_id,
@@ -509,6 +515,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
             ON sv.visit_id = js.visit_id WHERE
             js.script_url <> ''
             """
+    df = pd.read_sql_query(query, connection)
 
     if max_rank is not None:
         query += " AND visit_id <= %i" % max_rank
@@ -519,9 +526,31 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         site_url = row["site_url"]
         script_url = row["script_url"]
         operation = row["operation"]
-        arguments = row["arguments"]
         symbol = row["symbol"]
         value = row["value"]
+
+        if OLD_SCHEME:
+            parameter_index = row["parameter_index"]
+            print(parameter_index)
+            parameter_value = row["parameter_value"]
+            print(parameter_index)
+
+            for index in parameter_index:
+                arguments_dict = {}
+            for k in parameter_index:
+
+                if not arguments_dict.get(k):
+                    arguments_dict[k] = {}
+                    arguments_dict[k] = parameter_value[k]
+
+                else:
+                    arguments_dict[k] = parameter_value[k]
+
+            print(arguments_dict)
+            arguments = json.dumps(arguments_dict)
+
+        else:
+            arguments = row["arguments"]
 
         # Exclude relative URLs, data urls, blobs, javascript URLs
         if not (script_url.startswith("http://")
@@ -535,8 +564,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
             third_party_scripts.add(script_adress)
             third_party_script = True
 
-
-
         # get the simple feature for this call
         feat = get_simple_feature_from_js_info(operation, arguments, symbol)
         if feat is not None:
@@ -544,9 +571,9 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
         script_ranks[script_adress].add(visit_id)
 
+        """
         # Check easylist and easyprivacy blocked status
         # if we didn't do it for this script url before
-
         if script_url not in adblock_checked_scripts:
 
             if easylist_rules.should_block(
@@ -559,13 +586,9 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                                  'third-party': third_party_script}):
                 easyprivacy_blocked_scripts.add(script_adress)
 
-            if ENABLE_UBLOCK:
-                if ublock_rules.should_block(
-                        script_url, {'script': True,
-                                     'third-party': third_party_script}):
-                    ublock_blocked_scripts.add(script_adress)
             if is_blocked_by_disconnect(script_url, disconnect_blocklist):
                 disconnect_blocked_scripts.add(script_adress)
+     """
 
         # High level features
         # Canvas fingerprinting
@@ -666,7 +689,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
         EASYLIST_BLOCKED: easylist_blocked_scripts,
         EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
-        FB_COOKIEMONSTER_BLOCKED: cookiemonster_blocked_scripts,
         # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
         DISCONNECT_BLOCKED: disconnect_blocked_scripts,
         THIRD_PARTY_SCRIPT: third_party_scripts
@@ -709,6 +731,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         fp.write(json_string)
 
     print("Finished feature extraction")
+
 
 MIN_FONT_FP_FONT_COUNT = 50
 
@@ -838,8 +861,6 @@ def get_audio_ctx_fingerprinters(audio_ctx_calls_dict):
                        "visit#", visit_id))
                 break
     return audio_context_fingerprinters
-
-
 
 
 MIN_CANVAS_STYLE_CALLS = 0
@@ -1028,11 +1049,11 @@ if __name__ == '__main__':
         script_freqs = get_script_freqs_from_db(crawl_db_path)
         write_script_visit_ids(script_freqs, 'script_visit_ids.csv')
         sys.exit(0)
-    ########################################
     LIMIT_SITE_RANK = False
     SELECTED_IDS_ONLY = True
     # Only to be used with the home-page only crawls
     MAX_RANK = 0  # for debugging testing
+
     if LIMIT_SITE_RANK:
         get_cookies(crawl_db_path, MAX_RANK)
         extract_features(crawl_db_path, out_csv, MAX_RANK)
@@ -1040,7 +1061,12 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        #get_cookies(crawl_db_path, selected_visit_ids)
+        # get_cookies(crawl_db_path, selected_visit_ids)
+        print(CRAWL_NAME)
+        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+                          "2017-03"]:
+            print("using old db scheme without arguments")
+            extract_features(crawl_db_path, out_csv, selected_visit_ids, OLD_SCHEME=True)
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:

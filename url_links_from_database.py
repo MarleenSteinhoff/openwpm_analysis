@@ -9,12 +9,10 @@ load_dotenv()
 username = os.environ.get('WEBTAPUSER')
 password = os.environ.get('PASSWORD')
 
-
-
 BASEURL_STATEFULL = 'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateful/'
 BASEURL_STATELESS = 'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/'
 
-response = requests.get(BASEURL_STATEFULL, auth=(username, password))
+response = requests.get(BASEURL_STATELESS, auth=(username, password))
 soup = BeautifulSoup(response.text, 'html.parser')
 all_urls = []
 

@@ -1,4 +1,4 @@
-import requests as re
+import requests
 from time import time
 import requests
 import os
@@ -13,13 +13,16 @@ from clint.textui import progress
 if __name__ == '__main__':
     t0 = time()
     url = sys.argv[1]
+    print("url", url)
     extraction_dir = sys.argv[2]
+    print("ex_dir", extraction_dir)
 
     #load secrets
     load_dotenv()
     username = os.environ.get('WEBTAPUSER')
+    print(username)
     password = os.environ.get('PASSWORD')
-
+    print(password)
     print(f"Downloading file {url}")
     os.chdir(f"{extraction_dir}")
     filename = url.rsplit('/',1)[1]
@@ -29,7 +32,8 @@ if __name__ == '__main__':
     if r.status_code != 200:
         print("status_code != 200")
         r = requests.get(url, auth=(username, password), stream=True)
-    
+        print(r.status_code)
+
     print(r.headers)    
   
     if r.status_code == 200:
