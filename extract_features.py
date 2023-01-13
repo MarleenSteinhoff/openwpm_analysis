@@ -478,9 +478,9 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
     script_features = defaultdict(set)
 
     # To check script URLs against adblock rules
-    easylist_blocked_scripts = set()
-    easyprivacy_blocked_scripts = set()
-    disconnect_blocked_scripts = set()
+    #easylist_blocked_scripts = set()
+    #easyprivacy_blocked_scripts = set()
+    #disconnect_blocked_scripts = set()
     #easylist_rules, easyprivacy_rules, ublock_rules = get_adblock_rules()
     #disconnect_blocklist = get_disconnect_blocked_hosts()
     adblock_checked_scripts = set()  # to prevent repeated lookups
@@ -674,10 +674,10 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
         print("request_triggering_scripts", request_triggering_scripts)
         print("third_party_request_triggering_scripts", third_party_request_triggering_scripts)
         print(THIRD_PARTY_SCRIPT, third_party_scripts)
-        print(EASYLIST_BLOCKED, easylist_blocked_scripts)
-        print(EASYPRIVACY_BLOCKED, easyprivacy_blocked_scripts)
+        #print(EASYLIST_BLOCKED, easylist_blocked_scripts)
+        #print(EASYPRIVACY_BLOCKED, easyprivacy_blocked_scripts)
         # print UBLOCK_ORIGIN_BLOCKED, ublock_blocked_scripts
-        print(DISCONNECT_BLOCKED, disconnect_blocked_scripts)
+        #print(DISCONNECT_BLOCKED, disconnect_blocked_scripts)
 
     high_level_feat_dict = {
         CANVAS_FP: canvas_fingerprinters,
@@ -687,10 +687,10 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
         BATTERY_FP: battery_fingerprinters,
         TRIGGERS_REQUEST: request_triggering_scripts,
         TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
-        EASYLIST_BLOCKED: easylist_blocked_scripts,
-        EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
+        #EASYLIST_BLOCKED: easylist_blocked_scripts,
+        #EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
         # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
-        DISCONNECT_BLOCKED: disconnect_blocked_scripts,
+        #DISCONNECT_BLOCKED: disconnect_blocked_scripts,
         THIRD_PARTY_SCRIPT: third_party_scripts
     }
 
@@ -702,11 +702,11 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
         NUM_BATTERY_FP: len(battery_fingerprinters),
         NUM_TRIGGERS_REQUEST: len(request_triggering_scripts),
         NUM_TRIGGERS_TP_REQUEST: len(third_party_request_triggering_scripts),
-        NUM_EASYLIST_BLOCKED: len(easylist_blocked_scripts),
-        NUM_EASYPRIVACY_BLOCKED: len(easyprivacy_blocked_scripts),
+        #NUM_EASYLIST_BLOCKED: len(easylist_blocked_scripts),
+        #NUM_EASYPRIVACY_BLOCKED: len(easyprivacy_blocked_scripts),
 
         # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
-        NUM_DISCONNECT_BLOCKED: len(disconnect_blocked_scripts),
+        #NUM_DISCONNECT_BLOCKED: len(disconnect_blocked_scripts),
         NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts)
     }
 
