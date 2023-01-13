@@ -445,7 +445,7 @@ def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None):
         fp.write(json_string)
 
 
-def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None, OLD_SCHEME=False):
+def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None):
     print("extract_features")
     """Extract fingerprinting related features from the javascript table
     of the crawl database.
@@ -476,13 +476,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
     # simple features
     script_ranks = defaultdict(set)  # site ranks where a script is embedded
     script_features = defaultdict(set)
-
-    # To check script URLs against adblock rules
-    #easylist_blocked_scripts = set()
-    #easyprivacy_blocked_scripts = set()
-    #disconnect_blocked_scripts = set()
-    #easylist_rules, easyprivacy_rules, ublock_rules = get_adblock_rules()
-    #disconnect_blocklist = get_disconnect_blocked_hosts()
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
 
@@ -493,15 +486,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
     c = connection.cursor()
 
     if id_urls_map:
-        if OLD_SCHEME:
-            query = f"""SELECT sv.site_url, sv.visit_id,
-                js.script_url, js.operation, js.parameter_index, js.parameter_value, js.symbol, js.value
-                FROM javascript as js LEFT JOIN site_visits as sv
-                ON sv.visit_id = js.visit_id WHERE
-                js.script_url <> '' AND js.visit_id IN {format(id_urls_map)}
-                """
-        else:
-            query = f"""SELECT sv.site_url, sv.visit_id,
+
+        query = f"""SELECT sv.site_url, sv.visit_id,
                 js.script_url, js.operation, js.arguments, js.symbol, js.value
                 FROM javascript as js LEFT JOIN site_visits as sv
                 ON sv.visit_id = js.visit_id WHERE
@@ -515,7 +501,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
             ON sv.visit_id = js.visit_id WHERE
             js.script_url <> ''
             """
-    df = pd.read_sql_query(query, connection)
+
 
     if max_rank is not None:
         query += " AND visit_id <= %i" % max_rank
@@ -528,29 +514,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
         operation = row["operation"]
         symbol = row["symbol"]
         value = row["value"]
-
-        if OLD_SCHEME:
-            parameter_index = row["parameter_index"]
-            print(parameter_index)
-            parameter_value = row["parameter_value"]
-            print(parameter_index)
-
-            for index in parameter_index:
-                arguments_dict = {}
-            for k in parameter_index:
-
-                if not arguments_dict.get(k):
-                    arguments_dict[k] = {}
-                    arguments_dict[k] = parameter_value[k]
-
-                else:
-                    arguments_dict[k] = parameter_value[k]
-
-            print(arguments_dict)
-            arguments = json.dumps(arguments_dict)
-
-        else:
-            arguments = row["arguments"]
+        arguments = row["arguments"]
 
         # Exclude relative URLs, data urls, blobs, javascript URLs
         if not (script_url.startswith("http://")
@@ -1061,13 +1025,8 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        # get_cookies(crawl_db_path, selected_visit_ids)
+        get_cookies(crawl_db_path, selected_visit_ids)
         print("crawlname", CRAWL_NAME)
-        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
-                          "2017-03"]:
-            print("using old db scheme without arguments")
-            extract_features(crawl_db_path, out_csv, selected_visit_ids, OLD_SCHEME=True)
-        print("using new db scheme with arguments column")
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
