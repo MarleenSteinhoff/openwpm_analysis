@@ -536,7 +536,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
             print(parameter_index)
 
             for index in parameter_index:
-            arguments_dict = {}
+                arguments_dict = {}
             for k in parameter_index:
 
                 if not arguments_dict.get(k):
@@ -545,13 +545,12 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
 
                 else:
                     arguments_dict[k] = parameter_value[k]
-      
+
             print(arguments_dict)
             arguments = json.dumps(arguments_dict)
 
         else:
             arguments = row["arguments"]
-
 
         # Exclude relative URLs, data urls, blobs, javascript URLs
         if not (script_url.startswith("http://")
@@ -564,8 +563,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
         if is_third_party(script_url, site_url):
             third_party_scripts.add(script_adress)
             third_party_script = True
-
-
 
         # get the simple feature for this call
         feat = get_simple_feature_from_js_info(operation, arguments, symbol)
@@ -735,6 +732,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None,
 
     print("Finished feature extraction")
 
+
 MIN_FONT_FP_FONT_COUNT = 50
 
 
@@ -863,8 +861,6 @@ def get_audio_ctx_fingerprinters(audio_ctx_calls_dict):
                        "visit#", visit_id))
                 break
     return audio_context_fingerprinters
-
-
 
 
 MIN_CANVAS_STYLE_CALLS = 0
@@ -1039,9 +1035,9 @@ python extract_features.py extract_frequencies_only
 """
 if __name__ == '__main__':
     t0 = time.time()
-    #crawl_dir = sys.argv[1]
+    # crawl_dir = sys.argv[1]
     crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
-    #OUT_DIR = sys.argv[2]
+    # OUT_DIR = sys.argv[2]
     OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
     out_csv = join(OUTDIR, "features.csv")
 
@@ -1066,8 +1062,10 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        #get_cookies(crawl_db_path, selected_visit_ids)
-        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02", "2017-03" ]:
+        # get_cookies(crawl_db_path, selected_visit_ids)
+        print(CRAWL_NAME)
+        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+                          "2017-03"]:
             print("using old db scheme without arguments")
             extract_features(crawl_db_path, out_csv, selected_visit_ids, OLD_SCHEME=True)
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
