@@ -321,16 +321,6 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     tracking_cookie_invalid_date = defaultdict(set)
 
 
-    print("in id urls map")
-    query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
-                     FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
-                     """
-
-    session_df = pd.read_sql_query(query_session, db)
-    num_session_cookies = session_df["visit_id"].size
-    print("session_cookies calculated")
-
     if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                       "2017-03"]:
         print("old scheme")
@@ -343,6 +333,15 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                                 """
     else:
         print("else")
+        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
+                         FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
+                         """
+
+        session_df = pd.read_sql_query(query_session, db)
+        num_session_cookies = session_df["visit_id"].size
+        print("session_cookies calculated")
+
         # no session and domain cookies
         query = f"""SELECT js.visit_id, js.is_http_only, 
                 js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
