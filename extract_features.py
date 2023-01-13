@@ -1044,7 +1044,7 @@ if __name__ == '__main__':
     crawl_dir = get_crawl_dir(crawl_dir)
     crawl_name = basename(crawl_dir.rstrip(sep))
     crawl_db_path = get_crawl_db_path(crawl_dir)
-    CRAWL_NAME = crawl_db_path.rsplit('/', 1)[-1].split(".sqlite")[0]
+    CRAWL_NAME = crawl_db_path.rsplit('/', 1)[-1].split("_")[0]
     if "extract_frequencies_only" in sys.argv:
         script_freqs = get_script_freqs_from_db(crawl_db_path)
         write_script_visit_ids(script_freqs, 'script_visit_ids.csv')
@@ -1062,11 +1062,12 @@ if __name__ == '__main__':
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         # get_cookies(crawl_db_path, selected_visit_ids)
-        print(CRAWL_NAME)
+        print("crawlname", CRAWL_NAME)
         if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
             print("using old db scheme without arguments")
             extract_features(crawl_db_path, out_csv, selected_visit_ids, OLD_SCHEME=True)
+        print("using new db scheme with arguments column")
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
