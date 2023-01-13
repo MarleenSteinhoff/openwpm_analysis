@@ -1014,10 +1014,10 @@ python extract_features.py extract_frequencies_only
 """
 if __name__ == '__main__':
     t0 = time.time()
-    #crawl_dir = sys.argv[1]
-    crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
-    #OUT_DIR = sys.argv[2]
-    OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
+    crawl_dir = sys.argv[1]
+    #crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
+    OUT_DIR = sys.argv[2]
+    #OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
     out_csv = join(OUTDIR, "features.csv")
 
     crawl_dir = get_crawl_dir(crawl_dir)
