@@ -80,7 +80,10 @@ class SetEncoder(json.JSONEncoder):
 
 
 def get_event_feature(arguments, symbol):
-    arguments_obj = json.loads(arguments)
+    if arguments is not None:
+        arguments_obj = json.loads(arguments)
+    else:
+        return None
     event_name = arguments_obj["0"]
     if event_name in JS_EVENTS:
         return "addEventListener_" + event_name
@@ -190,6 +193,7 @@ HTTP_COOKIES = "http_cookies"
 THRD_PARTY_COOKIES = "third_party_cookies"
 
 # High level features
+NONE_TYPE_ARGS = "none_type_args"
 CANVAS_FP = "canvas_fingerprinting"
 CANVAS_FONT_FP = "canvas_font_fingerprinting"
 AUDIO_CTX_FP = "audio_context_fingerprinting"
@@ -453,7 +457,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     TODO: use call_stack to get other potential scripts.
     The problem is how to do the attribution then, assign all access to all
     scripts that appear in the call_stack?"""
-
+    num_nonetype_arguments=defaultdict()
     # high level features
     canvas_reads = defaultdict(set)
     canvas_writes = defaultdict(set)
@@ -527,7 +531,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         feat = get_simple_feature_from_js_info(operation, arguments, symbol)
         if feat is not None:
             script_features[script_adress].add(feat)
-
+        else:
+            num_nonetype_arguments[script_url] += 1
         script_ranks[script_adress].add(visit_id)
 
         """
@@ -639,6 +644,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         #print(DISCONNECT_BLOCKED, disconnect_blocked_scripts)
 
     high_level_feat_dict = {
+        NONE_TYPE_ARGS: num_nonetype_arguments,
         CANVAS_FP: canvas_fingerprinters,
         CANVAS_FONT_FP: canvas_font_fingerprinters,
         AUDIO_CTX_FP: audio_ctx_fingerprinters,
