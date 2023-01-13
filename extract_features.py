@@ -1040,9 +1040,10 @@ if __name__ == '__main__':
         print("crawlname", CRAWL_NAME)
         if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
-            print("using old db scheme without arguments")
-            extract_features(crawl_db_path, out_csv, selected_visit_ids, OLD_SCHEME=True)
-        print("using new db scheme with arguments column")
+            print("using old db scheme without javascript cookies table")
+            get_cookies(crawl_db_path, MAX_RANK, OLD_SCHEME=True)
+
+
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
