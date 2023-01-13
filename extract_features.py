@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 # packages changed for python 3
 # pip install adblockparser
-
+import multiprocessing
+import queue
 import sys
+from threading import Thread
+
 from analyze_crawl import get_crawl_db_path, get_crawl_dir
 import ast
 import sqlite3
@@ -37,6 +40,7 @@ CHECK_ADBLOCK_STATUS_OF_ALL_JS = True  # False means we only check
 # scripts with sensor access
 DB = ''
 NO_RANK = []
+THREAD_COUNT = multiprocessing.cpu_count() * 10
 CONTAINS_NONE_RANKS = []
 DB_NAME = ''
 RESULTS_PATH = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data/results"
@@ -506,110 +510,61 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         query += " AND visit_id <= %i" % max_rank
 
     print("Starting feature extraction")
-    for row in tqdm(c.execute(query).fetchall()):
-        visit_id = row["visit_id"]
-        site_url = row["site_url"]
-        script_url = row["script_url"]
-        operation = row["operation"]
-        symbol = row["symbol"]
-        value = row["value"]
-        arguments = row["arguments"]
+    all_rows =c.execute(query).fetchall()
+    print("Query done")
 
-        # Exclude relative URLs, data urls, blobs, javascript URLs
-        if not (script_url.startswith("http://")
-                or script_url.startswith("https://")):
-            continue
+    in_queue = queue.Queue()
+    out_queue = queue.Queue()
 
-        script_adress = get_base_script_url(script_url)
+    # for 32 CPUs
+    for i in range(THREAD_COUNT):
+        worker = Thread(target=thread_worker, args=(i, in_queue, out_queue), daemon=True)
+        worker.start()
+    print("Workers running")
+    for row in all_rows:
+        in_queue.put(row)
+    print("Work queue filled")
+    completed_tasks = 0
 
-        third_party_script = False
-        if is_third_party(script_url, site_url):
-            third_party_scripts.add(script_adress)
-            third_party_script = True
+    print("Starting feature extraction")
+    with tqdm(total=len(all_rows)) as bar:
+        while completed_tasks < len(all_rows):
+            result = out_queue.get()
 
-        # get the simple feature for this call
-        feat = get_simple_feature_from_js_info(operation, arguments, symbol)
-        if feat is not None:
-            script_features[script_adress].add(feat)
-        else:
-            num_nonetype_arguments[script_url] += 1
-        script_ranks[script_adress].add(visit_id)
+            script_adress, visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag, arguments_None_Type_flag, script_feat_list, script_rank_flag, canvas_style_flag, canvas_read_flag, canvas_write_flag, canvas_text_flag, canvas_banned_call_flag, canvas_used_font_flag, canvas_measure_text_call_flag, webrtc_call_flag, battery_level_access_flag, battery_charging_time_access_flag, battery_discharging_time_access_flag, audio_ctx_call_flag = result
+            num_nonetype_arguments = defaultdict()
+            # high level features
+            canvas_reads = []
+            canvas_writes = defaultdict(set)
+            canvas_texts = defaultdict(set)
+            canvas_banned_calls = defaultdict(set)
+            canvas_styles = defaultdict(lambda: defaultdict(set))
+            battery_level_access = defaultdict(set)
+            battery_charging_time_access = defaultdict(set)
+            battery_discharging_time_access = defaultdict(set)
+            audio_ctx_calls = defaultdict(lambda: defaultdict(set))
+            webrtc_calls = defaultdict(lambda: defaultdict(set))
+            canvas_used_fonts = defaultdict(lambda: defaultdict(set))
+            canvas_measure_text_calls = defaultdict(int)
 
-        """
-        # Check easylist and easyprivacy blocked status
-        # if we didn't do it for this script url before
-        if script_url not in adblock_checked_scripts:
+            # simple features
+            script_ranks = defaultdict(set)  # site ranks where a script is embedded
+            script_features = defaultdict(set)
+            adblock_checked_scripts = set()  # to prevent repeated lookups
 
-            if easylist_rules.should_block(
-                    script_url, {'script': True,
-                                 'third-party': third_party_script}):
-                easylist_blocked_scripts.add(script_adress)
+            if third_party_script_flag:
+                third_party_scripts.add(script_adress)
+            if canvas_style_flag:
+                canvas_styles[script_adress][visit_id].add(value)
 
-            if easyprivacy_rules.should_block(
-                    script_url, {'script': True,
-                                 'third-party': third_party_script}):
-                easyprivacy_blocked_scripts.add(script_adress)
+            completed_tasks += 1
+        # AUSWERTUNG HIER
+            bar.update()
 
-            if is_blocked_by_disconnect(script_url, disconnect_blocklist):
-                disconnect_blocked_scripts.add(script_adress)
-     """
+    in_queue.join()
 
-        # High level features
-        # Canvas fingerprinting
-        if symbol in CANVAS_READ_FUNCS and operation == "call":
-            if (symbol == "CanvasRenderingContext2D.getImageData" and
-                    is_get_image_data_dimensions_too_small(arguments)):
-                continue
-            canvas_reads[script_adress].add(visit_id)
-        elif symbol in CANVAS_WRITE_FUNCS:
-            text = get_canvas_text(arguments)
-            # Python miscalculates the length of unicode strings that contain
-            # surrogate pairs such as emojis. This make the string look longer
-            # it really is and cause false positives.
-            # For instance "🏴​󠁧​󠁢​󠁥​󠁮​󠁧", which is written onto canvas by
-            # Wordpress to check emoji support, gives a length of 13.
-            # We ignore non-ascii characters to prevent these false positives.
-            if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
-                canvas_writes[script_adress].add(visit_id)
-                # the following is used to debug false positives
-                canvas_texts[(script_adress, visit_id)].add(text)
-        elif symbol == "CanvasRenderingContext2D.fillStyle" and \
-                operation == "call":
-            canvas_styles[script_adress][visit_id].add(value)
-        elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
-            canvas_banned_calls[script_adress].add(visit_id)
-        # Canvas font fingerprinting
-        elif symbol == "CanvasRenderingContext2D.font" and operation == "set":
-            canvas_used_fonts[script_adress][visit_id].add(value)
-        elif symbol == "CanvasRenderingContext2D.measureText" and \
-                operation == "call":
-            text = json.loads(arguments)["0"]
-            canvas_measure_text_calls[(script_adress, visit_id, text)] += 1
-        elif (operation == "call" and symbol in WEBRTC_FP_CALLS) or \
-                (operation == "set" and
-                 symbol == "RTCPeerConnection.onicecandidate"):
-            webrtc_calls[script_adress][visit_id].add(symbol)
 
-        # Battery Status API
-        elif operation == "get" and symbol in "BatteryManager.level":
-            battery_level_access[script_adress].add(visit_id)
-        elif operation == "get" and symbol in BATTERY_CHARGING_TIME_CALLS:
-            battery_charging_time_access[script_adress].add(visit_id)
-        elif operation == "get" and symbol in BATTERY_DISCHARGING_TIME_CALLS:
-            battery_discharging_time_access[script_adress].add(visit_id)
-        elif (operation == "call"
-              and symbol == "BatteryManager.addEventListener"):
-            event_type = json.loads(arguments)["0"]
-            if event_type == "levelchange":
-                battery_level_access[script_adress].add(visit_id)
-            elif event_type == "chargingtimechange":
-                battery_charging_time_access[script_adress].add(visit_id)
-            elif event_type == "dischargingtimechange":
-                battery_discharging_time_access[script_adress].add(visit_id)
-
-        # Audio Context API
-        elif symbol in AUDIO_CONTEXT_FUNCS:
-            audio_ctx_calls[script_adress][visit_id].add(symbol)
+    # END OF LOOP
 
     print("Feature extraction done, saving results")
     canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
@@ -701,6 +656,140 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 MIN_FONT_FP_FONT_COUNT = 50
 
 
+def thread_worker(i, in_q, out_q):
+    while True:
+
+        row = in_q.get()
+        try:
+            visit_id = row["visit_id"]
+            site_url = row["site_url"]
+            script_url = row["script_url"]
+            operation = row["operation"]
+            symbol = row["symbol"]
+            value = row["value"]
+            arguments = row["arguments"]
+
+            third_party_scripts = False
+            arguments_None_Type = False
+            script_feat = []
+            script_ranks = True
+            canvas_styles = False
+            canvas_reads = False
+            canvas_writes = False
+            canvas_texts = None
+            canvas_banned_calls = False
+            canvas_used_fonts = None
+            canvas_measure_text_calls = False
+            webrtc_calls = None
+            battery_level_access = False
+            battery_charging_time_access = False
+            battery_discharging_time_access = False
+            audio_ctx_calls = False
+
+
+            # Exclude relative URLs, data urls, blobs, javascript URLs
+            if not (script_url.startswith("http://")
+                    or script_url.startswith("https://")):
+                continue
+
+            script_adress = get_base_script_url(script_url)
+
+            if is_third_party(script_url, site_url):
+                third_party_scripts = True
+
+            # get the simple feature for this call
+            feat = get_simple_feature_from_js_info(operation, arguments, symbol)
+            if feat is not None:
+                script_feat.append(feat)
+            else:
+                arguments_None_Type = True
+
+            # Canvas fingerprinting
+            if symbol in CANVAS_READ_FUNCS and operation == "call":
+                if (symbol == "CanvasRenderingContext2D.getImageData" and
+                        is_get_image_data_dimensions_too_small(arguments)):
+                    continue
+                canvas_reads = True
+            elif symbol in CANVAS_WRITE_FUNCS:
+                text = get_canvas_text(arguments)
+                # Python miscalculates the length of unicode strings that contain
+                # surrogate pairs such as emojis. This make the string look longer
+                # it really is and cause false positives.
+                # For instance "🏴​󠁧​󠁢​󠁥​󠁮​󠁧", which is written onto canvas by
+                # Wordpress to check emoji support, gives a length of 13.
+                # We ignore non-ascii characters to prevent these false positives.
+                if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
+                    canvas_writes = True
+                    # the following is used to debug false positives
+                    canvas_texts = text
+            elif symbol == "CanvasRenderingContext2D.fillStyle" and \
+                    operation == "call":
+                canvas_styles = True
+            elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
+                canvas_banned_calls = True
+            # Canvas font fingerprinting
+            elif symbol == "CanvasRenderingContext2D.font" and operation == "set":
+                canvas_used_fonts = value
+            elif symbol == "CanvasRenderingContext2D.measureText" and \
+                    operation == "call":
+                text = json.loads(arguments)["0"]
+                canvas_measure_text_calls = True
+            elif (operation == "call" and symbol in WEBRTC_FP_CALLS) or \
+                    (operation == "set" and
+                     symbol == "RTCPeerConnection.onicecandidate"):
+                webrtc_calls = symbol
+
+            # Battery Status API
+            elif operation == "get" and symbol in "BatteryManager.level":
+                battery_level_access = True
+            elif operation == "get" and symbol in BATTERY_CHARGING_TIME_CALLS:
+                battery_charging_time_access = True
+            elif operation == "get" and symbol in BATTERY_DISCHARGING_TIME_CALLS:
+                battery_discharging_time_access = True
+            elif (operation == "call"
+                  and symbol == "BatteryManager.addEventListener"):
+                event_type = json.loads(arguments)["0"]
+                if event_type == "levelchange":
+                    battery_level_access = True
+                elif event_type == "chargingtimechange":
+                    battery_charging_time_access = True
+                elif event_type == "dischargingtimechange":
+                    battery_discharging_time_access = True
+
+            # Audio Context API
+            elif symbol in AUDIO_CONTEXT_FUNCS:
+                audio_ctx_calls = symbol
+
+            result = [script_adress,
+            visit_id,
+            site_url,
+            script_url,
+            operation,
+            symbol,
+            value,
+            arguments,
+            third_party_scripts,
+            arguments_None_Type,
+            script_feat,
+            script_ranks,
+            canvas_styles,
+            canvas_reads,
+            canvas_writes,
+            canvas_texts,
+            canvas_banned_calls,
+            canvas_used_fonts,
+            canvas_measure_text_calls,
+            webrtc_calls,
+            battery_level_access,
+            battery_charging_time_access,
+            battery_discharging_time_access,
+            audio_ctx_calls]
+
+            out_q.put(result)
+        except:
+            print("extract_features failed in thread {} with visit_id {}".format(i,row["visit_id"]))
+        finally:
+            in_q.task_done()
 def get_script_urls_from_req_call_stack(req_call_stack):
     """
     An example stack frame:
@@ -1028,7 +1117,7 @@ if __name__ == '__main__':
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         get_cookies(crawl_db_path, selected_visit_ids)
         print("crawlname", CRAWL_NAME)
-        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+        #get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
