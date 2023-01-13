@@ -326,7 +326,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         print("old scheme")
         # no session and domain cookies
         query = f"""SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, 
-                        js.host, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv
+                        js.host, sv.visit_id, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                 """
         print("SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, js.host, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)}")
