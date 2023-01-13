@@ -301,7 +301,7 @@ SENSOR_FEATURES = [
  """
 
 
-def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None):
+def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None, OLD_SCHEME=False):
     print("get_cookies")
     # database conn
     db = sqlite3.connect(db_file)
@@ -321,7 +321,6 @@ def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None):
     tracking_cookie_invalid_date = defaultdict(set)
 
     if id_urls_map:
-
         query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
                      FROM javascript_cookies as js LEFT JOIN site_visits as sv
                      ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
@@ -329,14 +328,26 @@ def get_cookies(db_file, id_urls_map=defaultdict(), max_rank=None):
         session_df = pd.read_sql_query(query_session, db)
         num_session_cookies = session_df["visit_id"].size
 
-        # no session and domain cookies
-        query = f"""SELECT js.visit_id, js.is_http_only, 
-            js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
-            js.policy, js.host, js.is_domain, 
-            js.is_secure,  js.change, sv.site_url
-                     FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
-                     """
+        if OLD_SCHEME:
+            print("old scheme")
+            # no session and domain cookies
+            query = f"""SELECT js.visit_id,
+                       js.name, js.path, js.creationTime, js.expiry, js.value, 
+                        js.host, sv.site_url
+                                FROM profile_cookies as js LEFT JOIN site_visits as sv
+                                ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} ;
+                                """
+
+        else:
+
+            # no session and domain cookies
+            query = f"""SELECT js.visit_id, js.is_http_only, 
+                js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
+                js.policy, js.host, js.is_domain, 
+                js.is_secure,  js.change, sv.site_url
+                         FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
+                         """
 
     else:
         query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
@@ -1025,8 +1036,13 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        get_cookies(crawl_db_path, selected_visit_ids)
+        # get_cookies(crawl_db_path, selected_visit_ids)
         print("crawlname", CRAWL_NAME)
+        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+                          "2017-03"]:
+            print("using old db scheme without arguments")
+            extract_features(crawl_db_path, out_csv, selected_visit_ids, OLD_SCHEME=True)
+        print("using new db scheme with arguments column")
         extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
