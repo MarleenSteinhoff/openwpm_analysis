@@ -352,7 +352,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     if max_rank is not None:
         query += " AND visit_id <= %i" % max_rank
-
+    print(query)
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
         num_cookie_total += 1
