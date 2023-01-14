@@ -334,14 +334,20 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     tracker_urls = set()
     tracking_cookie_invalid_date = defaultdict(set)
 
-    if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+    if CRAWL_NAME in ["2016-03", "2016-04", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                       "2017-03"]:
         print("old scheme")
-        # no session and domain cookies
+
         query = f"""SELECT js.visit_id, js.name, js.path, js.time_stamp, js.expiry, js.value, 
                         js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                 """
+
+    if CRAWL_NAME in ["2016-05"]:
+        query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
+                                js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                                        ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
+                                        """
 
     if CRAWL_NAME in ["2019-06"]:
         query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
@@ -549,7 +555,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
     if max_rank is not None:
         query += " AND js.visit_id <= %i" % max_rank
-
+    print(query)
     print("Starting feature extraction, executing query")
     all_rows = c.execute(query).fetchall()
     print("len(all_rows)", len(all_rows))
@@ -1206,7 +1212,7 @@ if __name__ == '__main__':
     LIMIT_SITE_RANK = False
     SELECTED_IDS_ONLY = True
     # Only to be used with the home-page only crawls
-    MAX_RANK = 100  # for debugging testing
+    MAX_RANK = 1000  # for debugging testing
 
     if LIMIT_SITE_RANK:
         get_cookies(crawl_db_path, MAX_RANK)
@@ -1216,7 +1222,8 @@ if __name__ == '__main__':
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
-        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+        if CRAWL_NAME not in ["2016-05"]:
+            get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
