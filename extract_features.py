@@ -345,7 +345,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     if CRAWL_NAME in ["2019-06"]:
         query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
-                                js.host, js.same_site, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                                js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
                                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
 
@@ -362,8 +362,8 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     if CRAWL_NAME not in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
-        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
-                         FROM javascript_cookies as js LEFT JOIN site_visits as sv
+        query_session = f"""SELECT js.visit_id, js.isHttpOnly, sv.site_url, js.baseDomain,
+                         FROM profile_cookies as js LEFT JOIN site_visits as sv
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
                          """
         session_df = pd.read_sql_query(query_session, db)
@@ -374,21 +374,38 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     for row in tqdm(c.execute(query).fetchall()):
         num_cookie_total += 1
         visit_id = row["visit_id"]
-        is_http_only = row["is_http_only"]
         value = row["value"]
         site_url = row["site_url"]
         expiry = row["expiry"]
         host = row["host"]
+        is_http_only = None
+        creationtime = None
+        creationtime = None
+        is_domain = None
+
+        if CRAWL_NAME in ["2016-05"]:
+            is_http_only = row["isHttpOnly"]
+            creationtime = row["creationTime"]
+            basedomain = row["baseDomain"]
+            is_domain, _, _ = not is_third_party(site_url, basedomain)
+            print("is_domain: ", is_domain)
 
         if CRAWL_NAME in ["2019-06"]:
             creationtime = row["time_stamp"]
-            is_domain = row["same_site"]
+            is_domain, _, _ = not is_third_party(site_url, basedomain)
+            print("is_domain: ", is_domain)
             change = row["change_cause"]
+            is_http_only = row["is_http_only"]
         else:
             creationtime = row["creationTime"]
             is_domain = row["is_domain"]
             change = row["change"]
+            is_http_only = row["is_http_only"]
 
+        print(creationtime)
+        print(is_domain)
+        print(change)
+        print(is_http_only)
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
