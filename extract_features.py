@@ -276,6 +276,7 @@ def get_script_freqs_from_db(db_file, max_rank=None, selected_ids=defaultdict())
         query = """SELECT visit_id, script_url FROM javascript WHERE
             script_url <> '' 
             """
+
     if max_rank is not None:
         query += " AND visit_id <= %i" % max_rank
 
@@ -344,7 +345,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     if CRAWL_NAME in ["2019-06"]:
         query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
-                                js.host, js.same_site sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
+                                js.host, js.same_site, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
                                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
 
