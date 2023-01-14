@@ -4,6 +4,7 @@
 import multiprocessing
 import queue
 import sys
+import traceback
 from threading import Thread
 
 from analyze_crawl import get_crawl_db_path, get_crawl_dir
@@ -260,7 +261,13 @@ def is_get_image_data_dimensions_too_small(arguments):
 
 
 def get_base_script_url(script_url):
-    return script_url.split("//")[1].split("/")[0]
+    try:
+        return script_url.split("?")[0].split("&")[0].split("#")[0].split("://")[-1].strip()
+    except IndexError as e:
+        tb = traceback.format_exc()
+        print(tb)
+        print(script_url)
+
 
 
 def get_script_freqs_from_db(db_file, max_rank=None, selected_ids=defaultdict()):
@@ -328,7 +335,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     num_http_cookies = 0
     num_very_long_cookie = 0
     num_long_cookie = 0
-    num_crawled_urls = set()
+    num_crawled_urls = len(id_urls_map)
     tracking_site_urls = defaultdict()
     site_url_host_mapping = defaultdict(set)
     tracker_urls = set()
@@ -410,10 +417,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
             change = row["change"]
             is_http_only = row["is_http_only"]
 
-        print(creationtime)
-        print(is_domain)
-        print(change)
-        print(is_http_only)
+
         num_crawled_urls.add(site_url)
 
         if is_domain == 0:
@@ -610,8 +614,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                     canvas_styles[script_adress][visit_id] = {value}
             if canvas_write_flag:
                 if script_adress in canvas_writes:
-                    print(canvas_writes[script_adress])
-                    print(canvas_writes.values())
                     canvas_writes[script_adress].add(visit_id)
                     canvas_texts[(script_adress, visit_id)].add(canvas_text_list)
                 else:
@@ -725,10 +727,12 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "count_features.json")), 'w') as fp:
         json_string = json.dumps(count_dict, cls=SetEncoder)
         fp.write(json_string)
-
-    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_features.json")), 'w') as fp:
-        json_string = json.dumps(script_features, cls=SetEncoder)
-        fp.write(json_string)
+    """ 
+        with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_features.json")), 'w') as fp:
+            json_string = json.JSONEncoder.default(script_features)
+            json_string = json.dumps(script_features, cls=SetEncoder)
+            fp.write(json_string)
+            """
 
     with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "high_level_feat_dict.json")), 'w') as fp:
         json_string = json.dumps(high_level_feat_dict, cls=SetEncoder)
@@ -783,10 +787,12 @@ def thread_worker(i, in_q, out_q, db_file):
             battery_level_access = False
             battery_charging_time_access = False
             battery_discharging_time_access = False
-            audio_ctx_calls = False
+            audio_ctx_calls_flag = False
             req_scripts_list = None
             third_party_req_scripts_list = None
             script_adress = get_base_script_url(script_url)
+
+
 
             # Exclude relative URLs, data urls, blobs, javascript URLs
             if not (script_url.startswith("http://")
@@ -858,7 +864,7 @@ def thread_worker(i, in_q, out_q, db_file):
 
             # Audio Context API
             elif symbol in AUDIO_CONTEXT_FUNCS:
-                audio_ctx_calls = symbol
+                audio_ctx_calls_flag = symbol
 
             result = [
                 visit_id,
@@ -884,12 +890,12 @@ def thread_worker(i, in_q, out_q, db_file):
                 battery_level_access,
                 battery_charging_time_access,
                 battery_discharging_time_access,
-                audio_ctx_calls, req_scripts_list, third_party_req_scripts_list,
+                audio_ctx_calls_flag, req_scripts_list, third_party_req_scripts_list,
                 script_adress]
 
-        except KeyError:
-             print("extract_features failed with KeyError in thread {} with visit_id {}".format(i, row["visit_id"]))
-        except:
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(tb)
             print("extract_features failed in thread {} with visit_id {}".format(i, row["visit_id"]))
         finally:
             out_q.put(result)
@@ -1209,20 +1215,16 @@ if __name__ == '__main__':
         script_freqs = get_script_freqs_from_db(crawl_db_path)
         write_script_visit_ids(script_freqs, 'script_visit_ids.csv')
         sys.exit(0)
-    LIMIT_SITE_RANK = False
+
     SELECTED_IDS_ONLY = True
     # Only to be used with the home-page only crawls
     MAX_RANK = 1000  # for debugging testing
-
-    if LIMIT_SITE_RANK:
-        get_cookies(crawl_db_path, MAX_RANK)
-        #extract_features(crawl_db_path, out_csv, MAX_RANK)
 
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
-        if CRAWL_NAME not in ["2016-05"]:
+        if CRAWL_NAME in ["2016-05"]:
             get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
