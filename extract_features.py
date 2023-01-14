@@ -359,7 +359,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     print(q)
     for row in tqdm(q):
 
-        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+        if CRAWL_NAME in ["2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
             #visit_id = row["visit_id"]
             is_http_only = row["isHttpOnly"]
@@ -1043,7 +1043,7 @@ if __name__ == '__main__':
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
-        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05"]:
+        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06"]:
             print("This DB has no values in profile_cookies and flash_cookies. Skipping get_cookies")
             extract_features(crawl_db_path, out_csv, selected_visit_ids)
         else:
