@@ -338,6 +338,11 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                 """
 
+    if CRAWL_NAME in ["2019-06"]:
+        query = f"""SELECT js.visit_id, js.name, js.path, js.time_stamp, js.expiry, js.value, 
+                                js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
+                                        ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
+                                        """
     else:
         print("else")
         query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
@@ -360,6 +365,10 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
+        if CRAWL_NAME in ["2019-06"]:
+            creationtime = row["time_stamp"]
+        else:
+            creationtime = row["creationTime"]
         num_cookie_total += 1
         visit_id = row["visit_id"]
         is_http_only = row["is_http_only"]
@@ -368,7 +377,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         is_domain = row["is_domain"]
         change = row["change"]
         site_url = row["site_url"]
-        creationtime = row["creationTime"]
+
         expiry = row["expiry"]
         host = row["host"]
 
