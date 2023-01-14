@@ -571,7 +571,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 if script_adress in script_features:
                     script_features[script_adress].append(script_feat_list)
                 else:
-                    script_features[script_adress] = {script_feat_list}
+                    script_features[script_adress] = script_feat_list
             if third_party_script_flag:
                 third_party_scripts.add(script_adress)
             if canvas_style_flag:
@@ -599,7 +599,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 if script_adress in canvas_banned_calls:
                     canvas_banned_calls[script_adress].add(visit_id)
                 else:
-                    canvas_banned_calls[script_adress].add = {visit_id}
+                    canvas_banned_calls[script_adress] = {visit_id}
 
             if canvas_used_fonts_list:
                 try:
@@ -1183,7 +1183,7 @@ if __name__ == '__main__':
     LIMIT_SITE_RANK = False
     SELECTED_IDS_ONLY = True
     # Only to be used with the home-page only crawls
-    MAX_RANK = 1000  # for debugging testing
+    MAX_RANK = 0  # for debugging testing
 
     if LIMIT_SITE_RANK:
         get_cookies(crawl_db_path, MAX_RANK)
@@ -1192,9 +1192,8 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        # get_cookies(crawl_db_path, selected_visit_ids)
         print("crawlname", CRAWL_NAME)
-        # get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
