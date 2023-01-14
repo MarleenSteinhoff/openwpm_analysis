@@ -263,14 +263,19 @@ def get_base_script_url(script_url):
     return script_url.split("//")[1].split("/")[0]
 
 
-def get_script_freqs_from_db(db_file, max_rank=None):
+def get_script_freqs_from_db(db_file, max_rank=None, selected_ids=tuple()):
     """Return a frequency count for each script."""
     connection = sqlite3.connect(db_file)
     c = connection.cursor()
 
-    query = """SELECT visit_id, script_url FROM javascript WHERE
-        script_url <> ''
-        """
+    if selected_ids:
+        query = """SELECT visit_id, script_url FROM javascript WHERE
+            script_url <> '' AND js.visit_id IN {format(id_urls_map)} 
+            """
+    else:
+        query = """SELECT visit_id, script_url FROM javascript WHERE
+            script_url <> '' 
+            """
     if max_rank is not None:
         query += " AND visit_id <= %i" % max_rank
 
