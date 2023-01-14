@@ -366,11 +366,11 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
                          """
     else:
-        query_session = f"""SELECT js.visit_id, js.is_session FROM javascript_cookies WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
+        query_session = f"""SELECT js.visit_id, js.is_session FROM javascript_cookies AS js WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
                                  """
 
-        session_df = pd.read_sql_query(query_session, db)
-        num_session_cookies = session_df["visit_id"].size
+    session_df = pd.read_sql_query(query_session, db)
+    num_session_cookies = session_df["visit_id"].size
 
     print("session_cookies calculated")
 
