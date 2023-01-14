@@ -529,7 +529,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
     if max_rank is not None:
         query += " AND js.visit_id <= %i" % max_rank
-
+    cache_size_query = "PRAGME cache_size = -200000000"
+    c.execute(cache_size_query)
     print("Starting feature extraction, executing query")
     print(query)
     all_rows =c.execute(query).fetchall()
