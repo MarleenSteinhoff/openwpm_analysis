@@ -529,6 +529,9 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     connection.row_factory = sqlite3.Row
     c = connection.cursor()
     print("Building SQL query")
+    cache_size_query = "PRAGMA cache_size = -200000000"
+    c.execute(cache_size_query)
+
     if id_urls_map:
         query = f"""SELECT sv.site_url, sv.visit_id,
                 js.script_url, js.operation, js.arguments, js.symbol, js.value
@@ -546,13 +549,11 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
     if max_rank is not None:
         query += " AND js.visit_id <= %i" % max_rank
-    cache_size_query = "PRAGMA cache_size = -200000000"
-    c.execute(cache_size_query)
-    print("Starting feature extraction, executing query")
-    print(query)
-    all_rows = c.execute(query).fetchall()
-    print("Query done")
 
+    print("Starting feature extraction, executing query")
+    all_rows = c.execute(query).fetchall()
+    print("len(all_rows)", len(all_rows))
+    print("Query done")
     in_queue = queue.Queue()
     out_queue = queue.Queue()
 
@@ -564,11 +565,12 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     print("Workers running")
     for row in all_rows:
         in_queue.put(row)
-    print("Work queue filled")
+    print("Work queue filled", in_queue.qsize())
     completed_tasks = 0
 
     print("Starting feature extraction")
     with tqdm(total=len(all_rows)) as bar:
+
         while completed_tasks < len(all_rows):
             result = out_queue.get()
 
