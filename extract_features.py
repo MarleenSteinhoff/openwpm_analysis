@@ -352,7 +352,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                          FROM javascript_cookies as js LEFT JOIN site_visits as sv
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
                          """
-    df = pd.read_sql_query(query)
+    df = pd.read_sql_query(query, db)
     print(df.head(10))
     print("Starting get_cookie analysis")
     q = c.execute(query)
