@@ -504,7 +504,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
     print("default values set")
-    overall_script_ranks = get_script_freqs_from_db(db_file, None, id_urls_map)
+    overall_script_ranks = defaultdict(set)
     print("Setting up database connection")
     connection = sqlite3.connect(db_file)
     connection.row_factory = sqlite3.Row
@@ -552,15 +552,20 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         while completed_tasks < len(all_rows):
             result = out_queue.get()
 
-            script_adress, visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag,\
+            visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag,\
                 arguments_none_type_flag, script_feat_flag, script_feat_list, script_rank_flag, canvas_style_flag, canvas_read_flag, \
                 canvas_write_flag, canvas_text_list, canvas_banned_call_flag, canvas_used_fonts_list, \
                 canvas_measure_text_call_flag, webrtc_call_flag, battery_level_access_flag, \
                 battery_charging_time_access_flag, battery_discharging_time_access_flag, audio_ctx_call_flag,\
-                req_scripts_set, third_party_req_scripts_set = result
-            num_nonetype_arguments = defaultdict()
+                req_scripts_set, third_party_req_scripts_set, script_adress = result
 
-            script_ranks[script_adress].add(visit_id)
+            num_nonetype_arguments = defaultdict()
+            if visit_id is not -1:
+                if script_adress in overall_script_ranks:
+                    overall_script_ranks[script_adress].add(visit_id)
+                else:
+                    overall_script_ranks[script_adress] = visit_id
+
             # Canvas fingerprinting
             if script_feat_flag:
                 if script_adress in script_features:
@@ -747,14 +752,13 @@ def thread_worker(i, in_q, out_q, db_file):
             audio_ctx_calls = False
             req_scripts_list = None
             third_party_req_scripts_list = None
+            script_adress = get_base_script_url(script_url)
 
 
             # Exclude relative URLs, data urls, blobs, javascript URLs
             if not (script_url.startswith("http://")
                     or script_url.startswith("https://")):
                 continue
-
-            script_adress = get_base_script_url(script_url)
 
             if is_third_party(script_url, site_url):
                 third_party_scripts = True
@@ -826,7 +830,7 @@ def thread_worker(i, in_q, out_q, db_file):
             req_scripts_list, third_party_req_scripts_list = get_request_triggering_scripts(db_file)
 
 
-            result = [script_adress,
+            result = [
             visit_id,
             site_url,
             script_url,
@@ -850,7 +854,8 @@ def thread_worker(i, in_q, out_q, db_file):
             battery_level_access,
             battery_charging_time_access,
             battery_discharging_time_access,
-            audio_ctx_calls,req_scripts_list, third_party_req_scripts_list]
+            audio_ctx_calls,req_scripts_list, third_party_req_scripts_list,
+            script_adress]
 
             out_q.put(result)
         except:
