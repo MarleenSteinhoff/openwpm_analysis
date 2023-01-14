@@ -333,48 +333,42 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     site_url_host_mapping = defaultdict(set)
     tracker_urls = set()
     tracking_cookie_invalid_date = defaultdict(set)
-    if not id_urls_map:
+
+    if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+                      "2017-03"]:
+        print("old scheme")
+        # no session and domain cookies
         query = f"""SELECT js.visit_id, js.name, js.path, js.time_stamp, js.expiry, js.value, 
-                                js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
-                                        ON sv.visit_id = js.visit_id WHERE js.visit_id 
+                        js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
+                                ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
+                                """
+
+    if CRAWL_NAME in ["2019-06"]:
+        query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
+                                js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                                        ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
+
     else:
+        print("else")
+        # no session and domain cookies
+        query = f"""SELECT js.visit_id, js.is_http_only, 
+                js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
+                js.policy, js.host, js.is_domain, 
+                js.is_secure,  js.change, sv.site_url
+                         FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
+                         """
 
-        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+    if CRAWL_NAME not in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
-            print("old scheme")
-            # no session and domain cookies
-            query = f"""SELECT js.visit_id, js.name, js.path, js.time_stamp, js.expiry, js.value, 
-                            js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
-                                    ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
-                                    """
-
-        if CRAWL_NAME in ["2019-06"]:
-            query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
-                                    js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                                            ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
-                                            """
-
-        else:
-            print("else")
-            # no session and domain cookies
-            query = f"""SELECT js.visit_id, js.is_http_only, 
-                    js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
-                    js.policy, js.host, js.is_domain, 
-                    js.is_secure,  js.change, sv.site_url
-                             FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                             ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
-                             """
-
-        if CRAWL_NAME not in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
-                              "2017-03"]:
-            query_session = f"""SELECT js.visit_id, js.isHttpOnly, sv.site_url, js.baseDomain,
-                             FROM profile_cookies as js LEFT JOIN site_visits as sv
-                             ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
-                             """
-        session_df = pd.read_sql_query(query_session, db)
-        num_session_cookies = session_df["visit_id"].size
-        print("session_cookies calculated")
+        query_session = f"""SELECT js.visit_id, js.isHttpOnly, sv.site_url, js.baseDomain,
+                         FROM profile_cookies as js LEFT JOIN site_visits as sv
+                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
+                         """
+    session_df = pd.read_sql_query(query_session, db)
+    num_session_cookies = session_df["visit_id"].size
+    print("session_cookies calculated")
 
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
