@@ -27,7 +27,7 @@ from analysis_utils.utils import (is_third_party, is_blocked_by_disconnect,
                                   get_disconnect_blocked_hosts, get_delta_timespan)
 
 OUTDIR = ""
-CRAWL_NAME = ""
+CRAWL_NAME = None
 DEBUG = False
 
 # search for the occurences of ublock after enabling this switch
@@ -356,19 +356,33 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
+
+        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+                          "2017-03"]:
+            #visit_id = row["visit_id"]
+            is_http_only = row["isHttpOnly"]
+            value = row["value"]
+            host = row["host"]
+            site_url = row["site_url"]
+            is_domain = not is_third_party(site_url, host)
+            creationtime = row["creationTime"]
+            expiry = row["expiry"]
+            print(is_http_only, value, host, site_url, is_domain, creationtime, expiry)
+        else:
+            #visit_id = row["visit_id"]
+            is_http_only = row["is_http_only"]
+            value = row["value"]
+            is_domain = row["is_domain"]
+            change = row["change"]
+            site_url = row["site_url"]
+            creationtime = row["creationTime"]
+            expiry = row["expiry"]
+            host = row["host"]
+
         num_cookie_total += 1
-        visit_id = row["visit_id"]
-        is_http_only = row["is_http_only"]
-        value = row["value"]
-        is_session = row["is_session"]
-        is_domain = row["is_domain"]
-        change = row["change"]
-        site_url = row["site_url"]
-        creationtime = row["creationTime"]
-        expiry = row["expiry"]
-        host = row["host"]
 
         if is_domain == 0:
+            print("is_domain == 0")
             # (1) the cookie has an expiration date over 90 days in the future
             if creationtime == "Invalid Date" or expiry == "Invalid Date":
                 if site_url in tracking_cookie_invalid_date:
