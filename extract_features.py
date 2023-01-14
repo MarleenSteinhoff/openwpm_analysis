@@ -343,17 +343,9 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                                 js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
                                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
+
     else:
         print("else")
-        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
-                         FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
-                         """
-
-        session_df = pd.read_sql_query(query_session, db)
-        num_session_cookies = session_df["visit_id"].size
-        print("session_cookies calculated")
-
         # no session and domain cookies
         query = f"""SELECT js.visit_id, js.is_http_only, 
                 js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
@@ -362,6 +354,20 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                          FROM javascript_cookies as js LEFT JOIN site_visits as sv
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
                          """
+
+
+
+    if CRAWL_NAME not in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+                          "2017-03"]:
+        query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
+                         FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
+                         """
+        session_df = pd.read_sql_query(query_session, db)
+        num_session_cookies = session_df["visit_id"].size
+        print("session_cookies calculated")
+
+
 
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
@@ -492,13 +498,13 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     script_features = defaultdict(set)
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
-
+    print("default values set")
     overall_script_ranks = get_script_freqs_from_db(db_file)
-
+    print("Setting up database connection")
     connection = sqlite3.connect(db_file)
     connection.row_factory = sqlite3.Row
     c = connection.cursor()
-
+    print("Building SQL query")
     if id_urls_map:
 
         query = f"""SELECT sv.site_url, sv.visit_id,
@@ -519,7 +525,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     if max_rank is not None:
         query += " AND js.visit_id <= %i" % max_rank
 
-    print("Starting feature extraction")
+    print("Starting feature extraction, executing query")
     print(query)
     all_rows =c.execute(query).fetchall()
     print("Query done")
