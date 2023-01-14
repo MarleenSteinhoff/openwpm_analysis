@@ -475,6 +475,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     webrtc_calls = defaultdict(lambda: defaultdict(set))
     canvas_used_fonts = defaultdict(lambda: defaultdict(set))
     canvas_measure_text_calls = defaultdict(int)
+    request_triggering_scripts = set()
+    third_party_request_triggering_scripts = set()
 
     # simple features
     script_ranks = defaultdict(set)  # site ranks where a script is embedded
@@ -494,9 +496,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 js.script_url, js.operation, js.arguments, js.symbol, js.value
                 FROM javascript as js LEFT JOIN site_visits as sv
                 ON sv.visit_id = js.visit_id WHERE
-                js.script_url <> '' AND js.visit_id IN {format(id_urls_map)}
+                js.script_url <> '' AND js.visit_id IN {format(id_urls_map)} 
                 """
-
     else:
         query = """SELECT sv.site_url, sv.visit_id,
             js.script_url, js.operation, js.arguments, js.symbol, js.value
@@ -507,18 +508,18 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
 
     if max_rank is not None:
-        query += " AND visit_id <= %i" % max_rank
+        query += " AND js.visit_id <= %i" % max_rank
 
     print("Starting feature extraction")
+    print(query)
     all_rows =c.execute(query).fetchall()
     print("Query done")
 
     in_queue = queue.Queue()
     out_queue = queue.Queue()
 
-    # for 32 CPUs
     for i in range(THREAD_COUNT):
-        worker = Thread(target=thread_worker, args=(i, in_queue, out_queue), daemon=True)
+        worker = Thread(target=thread_worker, args=(i, in_queue, out_queue, db_file), daemon=True)
         worker.start()
     print("Workers running")
     for row in all_rows:
@@ -531,42 +532,103 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         while completed_tasks < len(all_rows):
             result = out_queue.get()
 
-            script_adress, visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag, arguments_None_Type_flag, script_feat_list, script_rank_flag, canvas_style_flag, canvas_read_flag, canvas_write_flag, canvas_text_flag, canvas_banned_call_flag, canvas_used_font_flag, canvas_measure_text_call_flag, webrtc_call_flag, battery_level_access_flag, battery_charging_time_access_flag, battery_discharging_time_access_flag, audio_ctx_call_flag = result
+            script_adress, visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag,\
+                arguments_none_type_flag, script_feat_flag, script_feat_list, script_rank_flag, canvas_style_flag, canvas_read_flag, \
+                canvas_write_flag, canvas_text_list, canvas_banned_call_flag, canvas_used_fonts_list, \
+                canvas_measure_text_call_flag, webrtc_call_flag, battery_level_access_flag, \
+                battery_charging_time_access_flag, battery_discharging_time_access_flag, audio_ctx_call_flag,\
+                req_scripts_set, third_party_req_scripts_set = result
             num_nonetype_arguments = defaultdict()
-            # high level features
-            canvas_reads = []
-            canvas_writes = defaultdict(set)
-            canvas_texts = defaultdict(set)
-            canvas_banned_calls = defaultdict(set)
-            canvas_styles = defaultdict(lambda: defaultdict(set))
-            battery_level_access = defaultdict(set)
-            battery_charging_time_access = defaultdict(set)
-            battery_discharging_time_access = defaultdict(set)
-            audio_ctx_calls = defaultdict(lambda: defaultdict(set))
-            webrtc_calls = defaultdict(lambda: defaultdict(set))
-            canvas_used_fonts = defaultdict(lambda: defaultdict(set))
-            canvas_measure_text_calls = defaultdict(int)
 
-            # simple features
-            script_ranks = defaultdict(set)  # site ranks where a script is embedded
-            script_features = defaultdict(set)
-            adblock_checked_scripts = set()  # to prevent repeated lookups
-
+            script_ranks[script_adress].add(visit_id)
+            # Canvas fingerprinting
+            if script_feat_flag:
+                if script_adress in script_features:
+                    script_features[script_adress].append(script_feat_list)
+                else:
+                    script_features[script_adress] = script_feat_list
             if third_party_script_flag:
                 third_party_scripts.add(script_adress)
             if canvas_style_flag:
-                canvas_styles[script_adress][visit_id].add(value)
+                if script_adress in canvas_styles:
+                    canvas_styles[script_adress][visit_id].add(value)
+                else:
+                    canvas_styles[script_adress][visit_id] = value
+            if canvas_write_flag:
+                if script_adress in canvas_writes:
+                    canvas_writes[script_adress].add(visit_id)
+                    canvas_texts[(script_adress, visit_id)].add(canvas_texts)
+                else:
+                    canvas_writes[script_adress] = visit_id
+                    canvas_texts[(script_adress, visit_id)] = canvas_texts
+
+            if canvas_style_flag:
+                try:
+                    canvas_styles[script_adress][visit_id].add(value)
+                except KeyError:
+                    canvas_styles[script_adress][visit_id] = value
+
+            if canvas_banned_call_flag:
+                if script_adress in canvas_banned_calls:
+                    canvas_banned_calls[script_adress].add(visit_id)
+                else:
+                    canvas_banned_calls[script_adress].add = visit_id
+
+            if canvas_used_fonts_list:
+                try:
+                    canvas_used_fonts[script_adress][visit_id].add(value)
+                except KeyError:
+                    canvas_used_fonts[script_adress][visit_id] = value
+
+            if canvas_measure_text_call_flag:
+                text = json.loads(arguments)["0"]
+                canvas_measure_text_calls[(script_adress, visit_id, text)] += 1
+
+            if webrtc_call_flag:
+                try:
+                    webrtc_calls[script_adress][visit_id].add(symbol)
+                except KeyError:
+                    webrtc_calls[script_adress][visit_id] = symbol
+
+            # Battery Status API
+            if battery_level_access_flag:
+                if script_adress in battery_level_access:
+                    battery_level_access[script_adress].add(visit_id)
+                else:
+                    battery_level_access[script_adress] = visit_id
+
+            if battery_charging_time_access_flag:
+                if script_adress in battery_charging_time_access:
+                    battery_charging_time_access[script_adress].add(visit_id)
+                else:
+                    battery_charging_time_access[script_adress] = visit_id
+
+            if battery_discharging_time_access_flag:
+                if script_adress in battery_discharging_time_access:
+                    battery_discharging_time_access[script_adress].add(visit_id)
+                else:
+                    battery_discharging_time_access[script_adress] = visit_id
+
+            # Audio Context API
+            if audio_ctx_call_flag:
+                try:
+                    audio_ctx_calls[script_adress][visit_id].add(symbol)
+                except KeyError:
+                    audio_ctx_calls[script_adress][visit_id].add = symbol
+
+            if req_scripts_set is not None:
+                request_triggering_scripts = req_scripts_set
+            if third_party_req_scripts_set is not None:
+                third_party_request_triggering_scripts = third_party_req_scripts_set
 
             completed_tasks += 1
-        # AUSWERTUNG HIER
+            print("Done. Completed {} tasks".format(completed_tasks))
+            in_queue.task_done()
             bar.update()
 
     in_queue.join()
-
-
-    # END OF LOOP
-
     print("Feature extraction done, saving results")
+    #get fingerprinters
     canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
                                                       canvas_writes,
                                                       canvas_styles,
@@ -581,23 +643,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         battery_level_access, battery_charging_time_access,
         battery_discharging_time_access)
 
-    request_triggering_scripts, third_party_request_triggering_scripts = \
-        get_request_triggering_scripts(db_file)
-
-    if DEBUG:
-        print("audio_ctx_fingerprinters", audio_ctx_fingerprinters)
-        print("canvas_fingerprinters", canvas_fingerprinters)
-        print("canvas_font_fingerprinters", canvas_font_fingerprinters)
-        print("webrtc_fingerprinters", webrtc_fingerprinters)
-        print("battery_fingerprinters", battery_fingerprinters)
-        print("request_triggering_scripts", request_triggering_scripts)
-        print("third_party_request_triggering_scripts", third_party_request_triggering_scripts)
-        print(THIRD_PARTY_SCRIPT, third_party_scripts)
-        #print(EASYLIST_BLOCKED, easylist_blocked_scripts)
-        #print(EASYPRIVACY_BLOCKED, easyprivacy_blocked_scripts)
-        # print UBLOCK_ORIGIN_BLOCKED, ublock_blocked_scripts
-        #print(DISCONNECT_BLOCKED, disconnect_blocked_scripts)
-
     high_level_feat_dict = {
         NONE_TYPE_ARGS: num_nonetype_arguments,
         CANVAS_FP: canvas_fingerprinters,
@@ -607,10 +652,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         BATTERY_FP: battery_fingerprinters,
         TRIGGERS_REQUEST: request_triggering_scripts,
         TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
-        #EASYLIST_BLOCKED: easylist_blocked_scripts,
-        #EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
-        # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
-        #DISCONNECT_BLOCKED: disconnect_blocked_scripts,
         THIRD_PARTY_SCRIPT: third_party_scripts
     }
 
@@ -622,11 +663,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         NUM_BATTERY_FP: len(battery_fingerprinters),
         NUM_TRIGGERS_REQUEST: len(request_triggering_scripts),
         NUM_TRIGGERS_TP_REQUEST: len(third_party_request_triggering_scripts),
-        #NUM_EASYLIST_BLOCKED: len(easylist_blocked_scripts),
-        #NUM_EASYPRIVACY_BLOCKED: len(easyprivacy_blocked_scripts),
-
-        # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
-        #NUM_DISCONNECT_BLOCKED: len(disconnect_blocked_scripts),
         NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts)
     }
 
@@ -650,13 +686,15 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         json_string = json.dumps(overall_script_ranks, cls=SetEncoder)
         fp.write(json_string)
 
-    print("Finished feature extraction")
+
+
+
 
 
 MIN_FONT_FP_FONT_COUNT = 50
 
 
-def thread_worker(i, in_q, out_q):
+def thread_worker(i, in_q, out_q, db_file):
     while True:
 
         row = in_q.get()
@@ -669,13 +707,15 @@ def thread_worker(i, in_q, out_q):
             value = row["value"]
             arguments = row["arguments"]
 
+
             third_party_scripts = False
             arguments_None_Type = False
+            script_feat_flag = False
             script_feat = []
             script_ranks = True
-            canvas_styles = False
-            canvas_reads = False
-            canvas_writes = False
+            canvas_styles_flag = False
+            canvas_reads_flag = False
+            canvas_writes_flag = False
             canvas_texts = None
             canvas_banned_calls = False
             canvas_used_fonts = None
@@ -685,6 +725,8 @@ def thread_worker(i, in_q, out_q):
             battery_charging_time_access = False
             battery_discharging_time_access = False
             audio_ctx_calls = False
+            req_scripts_list = None
+            third_party_req_scripts_list = None
 
 
             # Exclude relative URLs, data urls, blobs, javascript URLs
@@ -700,6 +742,7 @@ def thread_worker(i, in_q, out_q):
             # get the simple feature for this call
             feat = get_simple_feature_from_js_info(operation, arguments, symbol)
             if feat is not None:
+                script_feat_flag = True
                 script_feat.append(feat)
             else:
                 arguments_None_Type = True
@@ -709,7 +752,7 @@ def thread_worker(i, in_q, out_q):
                 if (symbol == "CanvasRenderingContext2D.getImageData" and
                         is_get_image_data_dimensions_too_small(arguments)):
                     continue
-                canvas_reads = True
+                canvas_reads_flag = True
             elif symbol in CANVAS_WRITE_FUNCS:
                 text = get_canvas_text(arguments)
                 # Python miscalculates the length of unicode strings that contain
@@ -719,12 +762,12 @@ def thread_worker(i, in_q, out_q):
                 # Wordpress to check emoji support, gives a length of 13.
                 # We ignore non-ascii characters to prevent these false positives.
                 if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
-                    canvas_writes = True
+                    canvas_writes_flag = True
                     # the following is used to debug false positives
                     canvas_texts = text
             elif symbol == "CanvasRenderingContext2D.fillStyle" and \
                     operation == "call":
-                canvas_styles = True
+                canvas_styles_flag = True
             elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
                 canvas_banned_calls = True
             # Canvas font fingerprinting
@@ -760,6 +803,9 @@ def thread_worker(i, in_q, out_q):
             elif symbol in AUDIO_CONTEXT_FUNCS:
                 audio_ctx_calls = symbol
 
+            req_scripts_list, third_party_req_scripts_list = get_request_triggering_scripts(db_file)
+
+
             result = [script_adress,
             visit_id,
             site_url,
@@ -770,11 +816,12 @@ def thread_worker(i, in_q, out_q):
             arguments,
             third_party_scripts,
             arguments_None_Type,
+            script_feat_flag,
             script_feat,
             script_ranks,
-            canvas_styles,
-            canvas_reads,
-            canvas_writes,
+            canvas_styles_flag,
+            canvas_reads_flag,
+            canvas_writes_flag,
             canvas_texts,
             canvas_banned_calls,
             canvas_used_fonts,
@@ -783,7 +830,7 @@ def thread_worker(i, in_q, out_q):
             battery_level_access,
             battery_charging_time_access,
             battery_discharging_time_access,
-            audio_ctx_calls]
+            audio_ctx_calls,req_scripts_list, third_party_req_scripts_list]
 
             out_q.put(result)
         except:
@@ -1106,7 +1153,7 @@ if __name__ == '__main__':
     LIMIT_SITE_RANK = False
     SELECTED_IDS_ONLY = True
     # Only to be used with the home-page only crawls
-    MAX_RANK = 0  # for debugging testing
+    MAX_RANK = 1000  # for debugging testing
 
     if LIMIT_SITE_RANK:
         get_cookies(crawl_db_path, MAX_RANK)
@@ -1115,10 +1162,10 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        get_cookies(crawl_db_path, selected_visit_ids)
+        #get_cookies(crawl_db_path, selected_visit_ids)
         print("crawlname", CRAWL_NAME)
         #get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
-        extract_features(crawl_db_path, out_csv, selected_visit_ids)
+        extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
         get_cookies(crawl_db_path, MAX_RANK)
