@@ -40,7 +40,7 @@ CHECK_ADBLOCK_STATUS_OF_ALL_JS = True  # False means we only check
 # scripts with sensor access
 DB = ''
 NO_RANK = []
-THREAD_COUNT = multiprocessing.cpu_count() * 10
+THREAD_COUNT = 4#multiprocessing.cpu_count() * 10
 CONTAINS_NONE_RANKS = []
 DB_NAME = ''
 RESULTS_PATH = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data/results"
@@ -333,19 +333,18 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     tracker_urls = set()
     tracking_cookie_invalid_date = defaultdict(set)
 
-
     if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                       "2017-03"]:
         print("old scheme")
         # no session and domain cookies
-        query = f"""SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, 
+        query = f"""SELECT js.visit_id, js.name, js.path, js.time_stamp, js.expiry, js.value, 
                         js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                 """
 
     if CRAWL_NAME in ["2019-06"]:
-        query = f"""SELECT js.visit_id, js.name, js.path, js.time_stamp, js.expiry, js.value, 
-                                js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
+        query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
+                                js.host, js.same_site sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
                                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
 
@@ -360,8 +359,6 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
                          """
 
-
-
     if CRAWL_NAME not in ["2016-03", "2016-04", "2016-05", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
         query_session = f"""SELECT js.visit_id,  js.is_session, sv.site_url
@@ -372,25 +369,25 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         num_session_cookies = session_df["visit_id"].size
         print("session_cookies calculated")
 
-
-
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
-        if CRAWL_NAME in ["2019-06"]:
-            creationtime = row["time_stamp"]
-        else:
-            creationtime = row["creationTime"]
         num_cookie_total += 1
         visit_id = row["visit_id"]
         is_http_only = row["is_http_only"]
         value = row["value"]
-        is_session = row["is_session"]
-        is_domain = row["is_domain"]
-        change = row["change"]
         site_url = row["site_url"]
-
         expiry = row["expiry"]
         host = row["host"]
+
+        if CRAWL_NAME in ["2019-06"]:
+            creationtime = row["time_stamp"]
+            is_domain = row["same_site"]
+            change = row["change_cause"]
+        else:
+            creationtime = row["creationTime"]
+            is_domain = row["is_domain"]
+            change = row["change"]
+
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
@@ -413,7 +410,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                 continue
 
             # (3) the parametervalue remains the same throughout the measurement
-            if change == "changed" or change == "deleted":
+            if change == "changed" or change == "deleted" or change == "overwrite":
                 continue
 
             else:
@@ -481,7 +478,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     TODO: use call_stack to get other potential scripts.
     The problem is how to do the attribution then, assign all access to all
     scripts that appear in the call_stack?"""
-    num_nonetype_arguments=defaultdict()
+    num_nonetype_arguments = defaultdict()
     # high level features
     canvas_reads = defaultdict(set)
     canvas_writes = defaultdict(set)
@@ -497,21 +494,21 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     canvas_measure_text_calls = defaultdict(int)
     request_triggering_scripts = set()
     third_party_request_triggering_scripts = set()
+    # third_party_request_triggering_scripts = set()
 
     # simple features
     script_ranks = defaultdict(set)  # site ranks where a script is embedded
     script_features = defaultdict(set)
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
-    print("default values set")
     overall_script_ranks = defaultdict(set)
+    print("default values set")
     print("Setting up database connection")
     connection = sqlite3.connect(db_file)
     connection.row_factory = sqlite3.Row
     c = connection.cursor()
     print("Building SQL query")
     if id_urls_map:
-
         query = f"""SELECT sv.site_url, sv.visit_id,
                 js.script_url, js.operation, js.arguments, js.symbol, js.value
                 FROM javascript as js LEFT JOIN site_visits as sv
@@ -526,14 +523,13 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
             js.script_url <> ''
             """
 
-
     if max_rank is not None:
         query += " AND js.visit_id <= %i" % max_rank
     cache_size_query = "PRAGMA cache_size = -200000000"
     c.execute(cache_size_query)
     print("Starting feature extraction, executing query")
     print(query)
-    all_rows =c.execute(query).fetchall()
+    all_rows = c.execute(query).fetchall()
     print("Query done")
 
     in_queue = queue.Queue()
@@ -541,6 +537,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
     for i in range(THREAD_COUNT):
         worker = Thread(target=thread_worker, args=(i, in_queue, out_queue, db_file), daemon=True)
+        #worker_stats = Thread(target=stats_worker, args=(i, in_queue, out_queue), daemon=True)
+        #worker_stats.start()
         worker.start()
     print("Workers running")
     for row in all_rows:
@@ -553,11 +551,12 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         while completed_tasks < len(all_rows):
             result = out_queue.get()
 
-            visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag,\
+
+            visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag, \
                 arguments_none_type_flag, script_feat_flag, script_feat_list, script_rank_flag, canvas_style_flag, canvas_read_flag, \
                 canvas_write_flag, canvas_text_list, canvas_banned_call_flag, canvas_used_fonts_list, \
                 canvas_measure_text_call_flag, webrtc_call_flag, battery_level_access_flag, \
-                battery_charging_time_access_flag, battery_discharging_time_access_flag, audio_ctx_call_flag,\
+                battery_charging_time_access_flag, battery_discharging_time_access_flag, audio_ctx_call_flag, \
                 req_scripts_set, third_party_req_scripts_set, script_adress = result
 
             num_nonetype_arguments = defaultdict()
@@ -565,46 +564,48 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 if script_adress in overall_script_ranks:
                     overall_script_ranks[script_adress].add(visit_id)
                 else:
-                    overall_script_ranks[script_adress] = visit_id
+                    overall_script_ranks[script_adress] = {visit_id}
 
             # Canvas fingerprinting
             if script_feat_flag:
                 if script_adress in script_features:
                     script_features[script_adress].append(script_feat_list)
                 else:
-                    script_features[script_adress] = script_feat_list
+                    script_features[script_adress] = {script_feat_list}
             if third_party_script_flag:
                 third_party_scripts.add(script_adress)
             if canvas_style_flag:
                 if script_adress in canvas_styles:
                     canvas_styles[script_adress][visit_id].add(value)
                 else:
-                    canvas_styles[script_adress][visit_id] = value
+                    canvas_styles[script_adress][visit_id] = {value}
             if canvas_write_flag:
                 if script_adress in canvas_writes:
+                    print(canvas_writes[script_adress])
+                    print(canvas_writes.values())
                     canvas_writes[script_adress].add(visit_id)
-                    canvas_texts[(script_adress, visit_id)].add(canvas_texts)
+                    canvas_texts[(script_adress, visit_id)].add(canvas_text_list)
                 else:
-                    canvas_writes[script_adress] = visit_id
-                    canvas_texts[(script_adress, visit_id)] = canvas_texts
+                    canvas_writes[script_adress] = {visit_id}
+                    canvas_texts[(script_adress, visit_id)] = {canvas_text_list}
 
             if canvas_style_flag:
                 try:
                     canvas_styles[script_adress][visit_id].add(value)
                 except KeyError:
-                    canvas_styles[script_adress][visit_id] = value
+                    canvas_styles[script_adress][visit_id] = {value}
 
             if canvas_banned_call_flag:
                 if script_adress in canvas_banned_calls:
                     canvas_banned_calls[script_adress].add(visit_id)
                 else:
-                    canvas_banned_calls[script_adress].add = visit_id
+                    canvas_banned_calls[script_adress].add = {visit_id}
 
             if canvas_used_fonts_list:
                 try:
                     canvas_used_fonts[script_adress][visit_id].add(value)
                 except KeyError:
-                    canvas_used_fonts[script_adress][visit_id] = value
+                    canvas_used_fonts[script_adress][visit_id] = {value}
 
             if canvas_measure_text_call_flag:
                 text = json.loads(arguments)["0"]
@@ -614,33 +615,33 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 try:
                     webrtc_calls[script_adress][visit_id].add(symbol)
                 except KeyError:
-                    webrtc_calls[script_adress][visit_id] = symbol
+                    webrtc_calls[script_adress][visit_id] = {symbol}
 
             # Battery Status API
             if battery_level_access_flag:
                 if script_adress in battery_level_access:
                     battery_level_access[script_adress].add(visit_id)
                 else:
-                    battery_level_access[script_adress] = visit_id
+                    battery_level_access[script_adress] = {visit_id}
 
             if battery_charging_time_access_flag:
                 if script_adress in battery_charging_time_access:
                     battery_charging_time_access[script_adress].add(visit_id)
                 else:
-                    battery_charging_time_access[script_adress] = visit_id
+                    battery_charging_time_access[script_adress] = {visit_id}
 
             if battery_discharging_time_access_flag:
                 if script_adress in battery_discharging_time_access:
                     battery_discharging_time_access[script_adress].add(visit_id)
                 else:
-                    battery_discharging_time_access[script_adress] = visit_id
+                    battery_discharging_time_access[script_adress] = {visit_id}
 
             # Audio Context API
             if audio_ctx_call_flag:
                 try:
                     audio_ctx_calls[script_adress][visit_id].add(symbol)
                 except KeyError:
-                    audio_ctx_calls[script_adress][visit_id].add = symbol
+                    audio_ctx_calls[script_adress][visit_id].add = {symbol}
 
             if req_scripts_set is not None:
                 request_triggering_scripts = req_scripts_set
@@ -648,13 +649,13 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 third_party_request_triggering_scripts = third_party_req_scripts_set
 
             completed_tasks += 1
-            print("Done. Completed {} tasks".format(completed_tasks))
-            in_queue.task_done()
+            #print("Done. Completed {} tasks".format(completed_tasks))
+            out_queue.task_done()
             bar.update()
 
     in_queue.join()
     print("Feature extraction done, saving results")
-    #get fingerprinters
+    # get fingerprinters
     canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
                                                       canvas_writes,
                                                       canvas_styles,
@@ -713,18 +714,22 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         fp.write(json_string)
 
 
-
-
-
-
 MIN_FONT_FP_FONT_COUNT = 50
 
+def stats_worker(i, in_q, out_q):
+    while True:
+        print("Worker: {}, lengths in_q: {}, length out_q: {}".format(i, in_q.qsize(), out_q.qsize()))
+        time.sleep(1)
 
 def thread_worker(i, in_q, out_q, db_file):
+
+
     while True:
 
-        row = in_q.get()
         try:
+
+            row = in_q.get()
+
             visit_id = row["visit_id"]
             site_url = row["site_url"]
             script_url = row["script_url"]
@@ -732,7 +737,6 @@ def thread_worker(i, in_q, out_q, db_file):
             symbol = row["symbol"]
             value = row["value"]
             arguments = row["arguments"]
-
 
             third_party_scripts = False
             arguments_None_Type = False
@@ -755,7 +759,6 @@ def thread_worker(i, in_q, out_q, db_file):
             third_party_req_scripts_list = None
             script_adress = get_base_script_url(script_url)
 
-
             # Exclude relative URLs, data urls, blobs, javascript URLs
             if not (script_url.startswith("http://")
                     or script_url.startswith("https://")):
@@ -766,7 +769,7 @@ def thread_worker(i, in_q, out_q, db_file):
 
             # get the simple feature for this call
             feat = get_simple_feature_from_js_info(operation, arguments, symbol)
-            if feat is not None:
+            if feat is not None: #works
                 script_feat_flag = True
                 script_feat.append(feat)
             else:
@@ -828,41 +831,42 @@ def thread_worker(i, in_q, out_q, db_file):
             elif symbol in AUDIO_CONTEXT_FUNCS:
                 audio_ctx_calls = symbol
 
-            req_scripts_list, third_party_req_scripts_list = get_request_triggering_scripts(db_file)
-
-
             result = [
-            visit_id,
-            site_url,
-            script_url,
-            operation,
-            symbol,
-            value,
-            arguments,
-            third_party_scripts,
-            arguments_None_Type,
-            script_feat_flag,
-            script_feat,
-            script_ranks,
-            canvas_styles_flag,
-            canvas_reads_flag,
-            canvas_writes_flag,
-            canvas_texts,
-            canvas_banned_calls,
-            canvas_used_fonts,
-            canvas_measure_text_calls,
-            webrtc_calls,
-            battery_level_access,
-            battery_charging_time_access,
-            battery_discharging_time_access,
-            audio_ctx_calls,req_scripts_list, third_party_req_scripts_list,
-            script_adress]
+                visit_id,
+                site_url,
+                script_url,
+                operation,
+                symbol,
+                value,
+                arguments,
+                third_party_scripts,
+                arguments_None_Type,
+                script_feat_flag,
+                script_feat,
+                script_ranks,
+                canvas_styles_flag,
+                canvas_reads_flag,
+                canvas_writes_flag,
+                canvas_texts,
+                canvas_banned_calls,
+                canvas_used_fonts,
+                canvas_measure_text_calls,
+                webrtc_calls,
+                battery_level_access,
+                battery_charging_time_access,
+                battery_discharging_time_access,
+                audio_ctx_calls, req_scripts_list, third_party_req_scripts_list,
+                script_adress]
 
-            out_q.put(result)
+        except KeyError:
+             print("extract_features failed with KeyError in thread {} with visit_id {}".format(i, row["visit_id"]))
         except:
-            print("extract_features failed in thread {} with visit_id {}".format(i,row["visit_id"]))
+            print("extract_features failed in thread {} with visit_id {}".format(i, row["visit_id"]))
         finally:
+            out_q.put(result)
             in_q.task_done()
+
+
 def get_script_urls_from_req_call_stack(req_call_stack):
     """
     An example stack frame:
@@ -1163,9 +1167,9 @@ python extract_features.py extract_frequencies_only
 if __name__ == '__main__':
     t0 = time.time()
     crawl_dir = sys.argv[1]
-    #crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
+    # crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
     OUT_DIR = sys.argv[2]
-    #OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
+    # OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
     out_csv = join(OUTDIR, "features.csv")
 
     crawl_dir = get_crawl_dir(crawl_dir)
@@ -1188,9 +1192,9 @@ if __name__ == '__main__':
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
-        #get_cookies(crawl_db_path, selected_visit_ids)
+        # get_cookies(crawl_db_path, selected_visit_ids)
         print("crawlname", CRAWL_NAME)
-        #get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+        # get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
