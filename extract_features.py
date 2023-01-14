@@ -1047,8 +1047,8 @@ if __name__ == '__main__':
             print("This DB has no values in profile_cookies and flash_cookies. Skipping get_cookies")
             extract_features(crawl_db_path, out_csv, selected_visit_ids)
         else:
-        get_cookies(crawl_db_path, selected_visit_ids)
-        extract_features(crawl_db_path, out_csv, selected_visit_ids)
+            get_cookies(crawl_db_path, selected_visit_ids)
+            extract_features(crawl_db_path, out_csv, selected_visit_ids)
 
     else:
         get_cookies(crawl_db_path, MAX_RANK)
