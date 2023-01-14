@@ -560,7 +560,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 req_scripts_set, third_party_req_scripts_set, script_adress = result
 
             num_nonetype_arguments = defaultdict()
-            if visit_id is not -1:
+            if visit_id != -1:
                 if script_adress in overall_script_ranks:
                     overall_script_ranks[script_adress].add(visit_id)
                 else:
