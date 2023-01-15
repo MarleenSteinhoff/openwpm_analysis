@@ -353,7 +353,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
     if CRAWL_NAME in ["2016-05", "2016-06"]:
         query = f"""SELECT js.visit_id, js.name, js.path, js.isHttpOnly, js.creationTime, js.expiry, js.value, 
-                                js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                                js.host, js.change_cause, sv.site_url, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
                                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
 
