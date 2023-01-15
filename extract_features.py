@@ -387,14 +387,12 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     for row in tqdm(c.execute(query).fetchall()):
 
         num_cookie_total += 1
-        visit_id = row["visit_id"]
         value = row["value"]
         site_url = row["site_url"]
         expiry = row["expiry"]
         host = row["host"]
-        is_session = 0
 
-        if CRAWL_NAME in ["2016-05", "2016-05"]:
+        if CRAWL_NAME in ["2016-05", "2016-06"]:
             is_http_only = row["isHttpOnly"]
             creationtime = row["creationTime"]
             basedomain = row["baseDomain"]
@@ -413,6 +411,9 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
             change = row["change"]
             is_http_only = row["is_http_only"]
             is_session = row["is_session"]
+
+        if is_http_only == 1:
+            num_http_cookies += 1
 
         if is_session == 1:
             num_session_cookies += 1
