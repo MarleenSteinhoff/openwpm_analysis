@@ -381,9 +381,12 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         num_session_cookies = session_df["visit_id"].size
         print("session_cookies calculated")
 
-    print("Query for get_cookies: \n", query)
+    print("Query for get_cookies: \n", query.split("(")[0])
     print("Starting get_cookie analysis")
-    for row in tqdm(c.execute(query).fetchall()):
+
+    all_rows = c.execute(query).fetchall()
+    print("len rows: ",len(all_rows))
+    for row in tqdm(all_rows):
         num_cookie_total += 1
         value = row["value"]
         site_url = row["site_url"]
@@ -558,7 +561,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
 
     if max_rank is not None:
         query += " AND js.visit_id <= %i" % max_rank
-    print(query)
+    print(query.split("(")[0])
     print("Starting feature extraction, executing query")
     all_rows = c.execute(query).fetchall()
     print("len(all_rows)", len(all_rows))
