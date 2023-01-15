@@ -358,7 +358,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                                         """
 
     if CRAWL_NAME in ["2019-06"]:
-        query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, 
+        query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, js.is_session, js.is_host_only,
                                 js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
                                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
@@ -393,11 +393,6 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         site_url = row["site_url"]
         expiry = row["expiry"]
         host = row["host"]
-        is_http_only = None
-        creationtime = None
-        creationtime = None
-        is_domain = None
-
 
         if CRAWL_NAME in ["2016-05"]:
             is_http_only = row["isHttpOnly"]
@@ -408,10 +403,10 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
         if CRAWL_NAME in ["2019-06"]:
             creationtime = row["time_stamp"]
-            is_domain, _, _ = not is_third_party(site_url, basedomain)
-            print("is_domain: ", is_domain)
+            is_domain = row["is_host_only"]
             change = row["change_cause"]
             is_http_only = row["is_http_only"]
+            is_session = row["is_session"]
         else:
             creationtime = row["creationTime"]
             is_domain = row["is_domain"]
@@ -420,6 +415,9 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
 
 
 
+        if is_session == 1:
+            num_session_cookies += 1
+            continue
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
@@ -1134,7 +1132,6 @@ def empty_file(file_handle):
 
 def filter_out_non_absolute_urls(script_features):
     for script_url in script_features.keys():
-        print()
         script_url, urlparse(script_url).netloc
     return script_features
 
