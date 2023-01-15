@@ -476,7 +476,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         NUM_HTTP_COOKIES: num_http_cookies,
         NUM_VERY_LONG_COOKIE: num_very_long_cookie,
         NUM_LONG_COOKIE: num_long_cookie,
-        NUM_CRAWLED_URLS: len(num_crawled_urls),
+        NUM_CRAWLED_URLS: num_crawled_urls,
         COOKIE_SETTERS: len(tracker_urls)
     }
 
