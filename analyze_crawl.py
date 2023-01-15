@@ -340,36 +340,7 @@ class CrawlDBAnalysis(object):
         #    sort_values(by=['# sites'], ascending=False)
 
     ## not implemented
-    def get_redirection(self, con):
-        # Load the data
-        con.row_factory = sqlite3.Row
-        cur = con.cursor()
-        redirects = pd.read_sql_query("SELECT old_channel_id, new_channel_id, visit_id FROM http_redirects"
-                                      " WHERE old_channel_id IS NOT NULL AND is_sts_upgrade=0;", con)
-        requests = pd.read_sql_query("SELECT url, channel_id FROM http_requests;", con)
 
-        # build a map of channel_id to request url
-        channel_id_to_url_map = dict(zip(requests.channel_id, requests.url))
-
-        redirects["old_url"] = redirects["old_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
-        redirects["new_url"] = redirects["new_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
-
-        # Eliminate redirections that don't have a corresponding request in the http_requests table
-        redirects = redirects[~redirects.new_url.isnull()]
-
-        redirects['old_ps1'] = redirects['old_url'].apply(du.get_ps_plus_1)
-        redirects['new_ps1'] = redirects['new_url'].apply(du.get_ps_plus_1)
-
-        # only count redirections between different PS+1's
-        redirects = redirects[redirects.old_ps1 != redirects.new_ps1]
-
-        # only count a (src-dst) pair once on a website
-        redirects.drop_duplicates(subset=["visit_id", "old_ps1", "new_ps1"], inplace=True)
-
-        redirects.head()
-
-        redirects.groupby(['old_ps1', 'new_ps1']).size().reset_index(name='# sites'). \
-            sort_values(by=['# sites'], ascending=False)
 
     def get_canvas_fingerprinting(self, js, use_selected):
         #build query

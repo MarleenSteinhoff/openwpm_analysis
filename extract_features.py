@@ -6,7 +6,7 @@ import queue
 import sys
 import traceback
 from threading import Thread
-
+import crawl_utils.domain_utils as du
 from analyze_crawl import get_crawl_db_path, get_crawl_dir
 import ast
 import sqlite3
@@ -41,7 +41,7 @@ CHECK_ADBLOCK_STATUS_OF_ALL_JS = True  # False means we only check
 # scripts with sensor access
 DB = ''
 NO_RANK = []
-THREAD_COUNT = 4#multiprocessing.cpu_count() * 10
+THREAD_COUNT = multiprocessing.cpu_count() * 10
 CONTAINS_NONE_RANKS = []
 DB_NAME = ''
 RESULTS_PATH = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/analysis/data/results"
@@ -612,6 +612,11 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                     canvas_styles[script_adress][visit_id].add(value)
                 else:
                     canvas_styles[script_adress][visit_id] = {value}
+            if canvas_read_flag:
+                if script_adress in canvas_reads:
+                    canvas_reads[script_adress].add(visit_id)
+                else:
+                    canvas_reads[script_adress] = {visit_id}
             if canvas_write_flag:
                 if script_adress in canvas_writes:
                     canvas_writes[script_adress].add(visit_id)
@@ -619,13 +624,6 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 else:
                     canvas_writes[script_adress] = {visit_id}
                     canvas_texts[(script_adress, visit_id)] = {canvas_text_list}
-
-            if canvas_style_flag:
-                try:
-                    canvas_styles[script_adress][visit_id].add(value)
-                except KeyError:
-                    canvas_styles[script_adress][visit_id] = {value}
-
             if canvas_banned_call_flag:
                 if script_adress in canvas_banned_calls:
                     canvas_banned_calls[script_adress].add(visit_id)
@@ -927,6 +925,43 @@ def get_script_urls_from_req_call_stack(req_call_stack):
     return script_urls
 
 
+def get_redirection(con, selected_ids=tuple()):
+    # Load the data
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    if selected_ids:
+        redirects = pd.read_sql_query(f"SELECT old_channel_id, new_channel_id, visit_id FROM http_redirects"
+                                      " WHERE old_channel_id IS NOT NULL AND is_sts_upgrade=0 and visit_id IN {format(id_urls_map)};", con)
+        requests = pd.read_sql_query("SELECT url, channel_id FROM http_requests AND visit_id IN {format(id_urls_map)};", con)
+    else:
+
+        redirects = pd.read_sql_query("SELECT old_channel_id, new_channel_id, visit_id FROM http_redirects"
+                                      " WHERE old_channel_id IS NOT NULL AND is_sts_upgrade=0 ", con)
+        requests = pd.read_sql_query("SELECT url, channel_id FROM http_requests;", con)
+
+    # build a map of channel_id to request url
+    channel_id_to_url_map = dict(zip(requests.channel_id, requests.url))
+
+    redirects["old_url"] = redirects["old_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
+    redirects["new_url"] = redirects["new_channel_id"].map(lambda x: channel_id_to_url_map.get(x, None))
+
+    # Eliminate redirections that don't have a corresponding request in the http_requests table
+    redirects = redirects[~redirects.new_url.isnull()]
+
+    redirects['old_ps1'] = redirects['old_url'].apply(du.get_ps_plus_1)
+    redirects['new_ps1'] = redirects['new_url'].apply(du.get_ps_plus_1)
+
+    # only count redirections between different PS+1's
+    redirects = redirects[redirects.old_ps1 != redirects.new_ps1]
+
+    # only count a (src-dst) pair once on a website
+    redirects.drop_duplicates(subset=["visit_id", "old_ps1", "new_ps1"], inplace=True)
+
+    redirects.head()
+
+    redirects.groupby(['old_ps1', 'new_ps1']).size().reset_index(name='# sites'). \
+        sort_values(by=['# sites'], ascending=False)
+
 def get_request_triggering_scripts(db_file):
     request_triggering_scripts = set()
     third_party_request_triggering_scripts = set()
@@ -1202,15 +1237,14 @@ python extract_features.py extract_frequencies_only
 if __name__ == '__main__':
     t0 = time.time()
     crawl_dir = sys.argv[1]
-    # crawl_dir = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/Samples/"
     OUT_DIR = sys.argv[2]
-    # OUT_DIR = "/home/marleensteinhoff/UNi/Projektseminar/Datenanalyse/data/results/"
     out_csv = join(OUTDIR, "features.csv")
-
     crawl_dir = get_crawl_dir(crawl_dir)
     crawl_name = basename(crawl_dir.rstrip(sep))
     crawl_db_path = get_crawl_db_path(crawl_dir)
     CRAWL_NAME = crawl_db_path.rsplit('/', 1)[-1].split("_")[0].split(".sqlite")[0]
+    CRAWL_NAME = crawl_db_path.split('/')[0]
+    CRAWL_NAME = CRAWL_NAME.split("_")[0].split(".sqlite")[0]
     if "extract_frequencies_only" in sys.argv:
         script_freqs = get_script_freqs_from_db(crawl_db_path)
         write_script_visit_ids(script_freqs, 'script_visit_ids.csv')
@@ -1218,14 +1252,14 @@ if __name__ == '__main__':
 
     SELECTED_IDS_ONLY = True
     # Only to be used with the home-page only crawls
-    MAX_RANK = 1000  # for debugging testing
+    MAX_RANK = None  # for debugging testing
 
     if SELECTED_IDS_ONLY:
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
-        if CRAWL_NAME in ["2016-05"]:
-            get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+
+        #get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
