@@ -13,17 +13,11 @@ echo "out $ROOT_OUT_DIR"
 
 
 declare -a urls=(
-     'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2019-06_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-03_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-06_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-08_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-01_1m_stateless.tar.lz4'
-         'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-03_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-06_1m_stateless.tar.lz4'
-      'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-09_1m_stateless.tar.lz4'
-        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-12_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-02_1m_stateless.tar.lz4'
-       'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-03_1m_stateless.tar.lz4'
+'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-09_1m_stateless.tar.lz4'
+'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-06_1m_stateless.tar.lz4'
+'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-02_1m_stateless.tar.lz4'
+'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-01_1m_stateless.tar.lz4'
+
 )
 #print("already analyzed: 2017-05)
 
@@ -53,8 +47,6 @@ function decompress_and_process(){
   time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
   cd $CODE_DIR
   echo "-------------PROCESS START------------"
-  #echo "python analyze_crawl.py $CRAWL_DATA_PATH $ROOT_OUT_DIR"
-  #python analyze_crawl.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
   echo "python extract_features.py $CRAWL_DATA_PATH $ROOT_OUT_DIR"
   python extract_features.py $CRAWL_DATA_PATH $ROOT_OUT_DIR
   echo "Will remove $EXTRACTION_DIR/*201*"
