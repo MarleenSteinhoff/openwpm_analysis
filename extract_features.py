@@ -379,9 +379,9 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                          """
         session_df = pd.read_sql_query(query_session, db)
         num_session_cookies = session_df["visit_id"].size
+        print("session_cookies calculated")
 
-    print("session_cookies calculated")
-
+    print("Query for get_cookies: \n", query)
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
 
