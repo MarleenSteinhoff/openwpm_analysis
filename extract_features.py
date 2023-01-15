@@ -393,6 +393,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         site_url = row["site_url"]
         expiry = row["expiry"]
         host = row["host"]
+        is_session = 0
 
         if CRAWL_NAME in ["2016-05"]:
             is_http_only = row["isHttpOnly"]
@@ -412,8 +413,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
             is_domain = row["is_domain"]
             change = row["change"]
             is_http_only = row["is_http_only"]
-
-
+            is_session = row["is_session"]
 
         if is_session == 1:
             num_session_cookies += 1
