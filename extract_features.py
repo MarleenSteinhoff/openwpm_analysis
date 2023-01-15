@@ -544,7 +544,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     c.execute(cache_size_query)
 
     if id_urls_map:
-        query = f"""SELECT sv.site_url, sv.visit_id,
+        query = f"""SELECT sv.site_url, sv.visit_id, js.visit_id,
                 js.script_url, js.operation, js.arguments, js.symbol, js.value
                 FROM javascript as js LEFT JOIN site_visits as sv
                 ON sv.visit_id = js.visit_id WHERE
