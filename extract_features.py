@@ -815,9 +815,10 @@ def thread_worker(i, in_q, out_q, db_file):
 
             # Canvas fingerprinting
             if symbol in CANVAS_READ_FUNCS and operation == "call":
-                if (symbol == "CanvasRenderingContext2D.getImageData" and
-                        is_get_image_data_dimensions_too_small(arguments)):
-                    continue
+                if arguments is not None:
+                    if (symbol == "CanvasRenderingContext2D.getImageData" and
+                            is_get_image_data_dimensions_too_small(arguments)):
+                        continue
                 canvas_reads_flag = True
             elif symbol in CANVAS_WRITE_FUNCS:
                 text = get_canvas_text(arguments)
