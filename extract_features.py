@@ -10,7 +10,6 @@ import crawl_utils.domain_utils as du
 from analyze_crawl import get_crawl_db_path, get_crawl_dir
 import ast
 import sqlite3
-from pqdm.processes import pqdm
 from tqdm import tqdm
 import re
 import time
@@ -373,7 +372,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
                          """
 
-    if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-08", "2016-09", "2017-01", "2017-02",
+    if CRAWL_NAME in ["2016-03", "2016-04", "2016-08", "2016-09", "2017-01", "2017-02",
                           "2017-03"]:
         query_session = f"""SELECT js.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
