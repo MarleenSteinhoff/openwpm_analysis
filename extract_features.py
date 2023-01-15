@@ -155,7 +155,7 @@ NUM_HTTP_COOKIES = "num_http_cookies"
 NUM_VERY_LONG_COOKIE = "num_very_long_cookie"
 NUM_LONG_COOKIE = "num_long_cookie"
 NUM_CRAWLED_URLS = "num_crawled_urls"
-COOKIE_SETTERS = "cookie_setters"
+COOKIE_SETTERS = "cookie_setter_urls"
 
 PER_JS_COOKIES = "per_js_cookies"
 PER_COOKIE_TOTAL = "per_cookie_total"
@@ -181,7 +181,8 @@ NUM_EASYLIST_BLOCKED = "num_easylist_blocked"
 NUM_EASYPRIVACY_BLOCKED = "num_easyprivacy_blocked"
 # NUM_UBLOCK_ORIGIN_BLOCKED = "num_ublockorigin_blocked"
 NUM_DISCONNECT_BLOCKED = "num_disconnect_blocked"
-NUM_THIRD_PARTY_SCRIPT = "num_third_party_script"
+NUM_THIRD_PARTY_SCRIPT = "num_third_party_urls"
+NUM_FIRST_PARTIES = "num_first_parties"
 
 COUNT_FEATURES = [NUM_CANVAS_FP, NUM_CANVAS_FONT_FP, NUM_AUDIO_CTX_FP,
                   NUM_WEBRTC_FP, NUM_BATTERY_FP,
@@ -476,6 +477,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         NUM_VERY_LONG_COOKIE: num_very_long_cookie,
         NUM_LONG_COOKIE: num_long_cookie,
         NUM_CRAWLED_URLS: len(num_crawled_urls),
+        COOKIE_SETTERS: len(tracker_urls)
     }
 
     tracking_sites_dict = {
@@ -525,6 +527,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     canvas_measure_text_calls = defaultdict(int)
     request_triggering_scripts = set()
     third_party_request_triggering_scripts = set()
+    first_party_with_fp = set()
     # third_party_request_triggering_scripts = set()
 
     # simple features
@@ -719,7 +722,8 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
         NUM_BATTERY_FP: len(battery_fingerprinters),
         NUM_TRIGGERS_REQUEST: len(request_triggering_scripts),
         NUM_TRIGGERS_TP_REQUEST: len(third_party_request_triggering_scripts),
-        NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts)
+        NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts),
+        NUM_FIRST_PARTIES: len(id_urls_map)
     }
 
     with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "count_features.json")), 'w') as fp:
@@ -1256,8 +1260,8 @@ if __name__ == '__main__':
         selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
-
-        #get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+        print(len(selected_visit_ids))
+        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
