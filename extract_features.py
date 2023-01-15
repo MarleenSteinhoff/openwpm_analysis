@@ -419,7 +419,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
             is_http_only = row["is_http_only"]
 
 
-        num_crawled_urls.add(site_url)
+
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
