@@ -1243,8 +1243,6 @@ if __name__ == '__main__':
     crawl_name = basename(crawl_dir.rstrip(sep))
     crawl_db_path = get_crawl_db_path(crawl_dir)
     CRAWL_NAME = crawl_db_path.rsplit('/', 1)[-1].split("_")[0].split(".sqlite")[0]
-    CRAWL_NAME = crawl_db_path.split('/')[0]
-    CRAWL_NAME = CRAWL_NAME.split("_")[0].split(".sqlite")[0]
     if "extract_frequencies_only" in sys.argv:
         script_freqs = get_script_freqs_from_db(crawl_db_path)
         write_script_visit_ids(script_freqs, 'script_visit_ids.csv')
