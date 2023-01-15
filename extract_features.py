@@ -384,7 +384,6 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     print("Query for get_cookies: \n", query)
     print("Starting get_cookie analysis")
     for row in tqdm(c.execute(query).fetchall()):
-
         num_cookie_total += 1
         value = row["value"]
         site_url = row["site_url"]
@@ -1253,11 +1252,16 @@ if __name__ == '__main__':
     MAX_RANK = None  # for debugging testing
 
     if SELECTED_IDS_ONLY:
-        selected_ids = get_visit_id_site_url_mapping(crawl_db_path)
-        selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
+        tuple_id_url = get_visit_id_site_url_mapping(crawl_db_path)
+        selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
+        selected_urls = tuple(tuple_id_url['site_url'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
-        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+        if CRAWL_NAME in ["2016-05", "2016-06"]:
+            print("using site_url as primary key")
+            get_cookies(crawl_db_path, selected_urls, MAX_RANK)
+        else:
+            get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
