@@ -636,8 +636,9 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                     canvas_used_fonts[script_adress][visit_id] = {value}
 
             if canvas_measure_text_call_flag:
-                text = json.loads(arguments)["0"]
-                canvas_measure_text_calls[(script_adress, visit_id, text)] += 1
+                if arguments_none_type_flag:
+                    text = json.loads(arguments)["0"]
+                    canvas_measure_text_calls[(script_adress, visit_id, text)] += 1
 
             if webrtc_call_flag:
                 try:
@@ -789,6 +790,7 @@ def thread_worker(i, in_q, out_q, db_file):
             req_scripts_list = None
             third_party_req_scripts_list = None
             script_adress = get_base_script_url(script_url)
+            text = None
 
 
 
@@ -836,7 +838,8 @@ def thread_worker(i, in_q, out_q, db_file):
                 canvas_used_fonts = value
             elif symbol == "CanvasRenderingContext2D.measureText" and \
                     operation == "call":
-                text = json.loads(arguments)["0"]
+                if arguments_none_type_flag:
+                    text = json.loads(arguments)["0"]
                 canvas_measure_text_calls = True
             elif (operation == "call" and symbol in WEBRTC_FP_CALLS) or \
                     (operation == "set" and
@@ -852,7 +855,8 @@ def thread_worker(i, in_q, out_q, db_file):
                 battery_discharging_time_access = True
             elif (operation == "call"
                   and symbol == "BatteryManager.addEventListener"):
-                event_type = json.loads(arguments)["0"]
+                if arguments_none_type_flag:
+                    event_type = json.loads(arguments)["0"]
                 if event_type == "levelchange":
                     battery_level_access = True
                 elif event_type == "chargingtimechange":
