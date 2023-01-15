@@ -342,7 +342,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     tracker_urls = set()
     tracking_cookie_invalid_date = defaultdict(set)
 
-    if CRAWL_NAME in ["2016-03", "2016-04", "2016-06", "2016-08", "2016-09", "2017-01", "2017-02",
+    if CRAWL_NAME in ["2016-03", "2016-04", "2016-08", "2016-09", "2017-01", "2017-02",
                       "2017-03"]:
         print("old scheme")
 
