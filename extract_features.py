@@ -1223,10 +1223,15 @@ def all_tables_to_csv(crawl_db_path):
     cursor = db.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
     tables = cursor.fetchall()
+    table_dict = defaultdict()
     for table_name in tables:
         table_name = table_name[0]
         table = pd.read_sql_query("SELECT * from %s LIMIT 1;" % table_name, db)
-        table.to_csv(join(OUTDIR, table_name) + '.csv', index_label='index')
+        table_dict[table_name] = table
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, ".json")), 'w') as fp:
+        json_string = json.dumps(table_dict, indent=4, cls=SetEncoder)
+        fp.write(json_string)
 
     cursor.close()
     db.close()
