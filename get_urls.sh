@@ -43,6 +43,12 @@ declare -a urls_2=(
        'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-03_1m_stateless.tar.lz4'
 )
 
+declare -a url_table=(
+  'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2016-05_1m_stateless.tar.lz4'
+  'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2017-01_1m_stateless.tar.lz4'
+ 'https://webtransparency.cs.princeton.edu/webcensus/data-release/data/stateless/2018-06_1m_stateless.tar.lz4'
+
+)
 
 function download(){
     echo "Downloading into $CENSUS_LZ4_DATA_PATH"
