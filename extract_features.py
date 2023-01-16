@@ -345,8 +345,8 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                       "2017-03"]:
         print("old scheme")
 
-        query = f"""SELECT js.visit_id, js.name, js.path, js.time_stamp, js.expiry, js.value, 
-                        js.host, sv.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
+        query = f"""SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, 
+                        js.host, sv.visit_id, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv
                                 ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                 """
 
@@ -369,23 +369,30 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                 js.policy, js.host, js.is_domain, 
                 js.is_secure,  js.change, sv.site_url
                          FROM javascript_cookies as js LEFT JOIN site_visits as sv
-                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 0 AND js.is_domain = 0;
+                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_domain = 0
                          """
-
-    if CRAWL_NAME in ["2016-03", "2016-04", "2016-08", "2016-09", "2017-01", "2017-02",
-                          "2017-03"]:
-        query_session = f"""SELECT js.visit_id FROM profile_cookies as js LEFT JOIN site_visits as sv
-                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_session = 1;
-                         """
-        session_df = pd.read_sql_query(query_session, db)
-        num_session_cookies = session_df["visit_id"].size
-        print("session_cookies calculated")
 
     print("Query for get_cookies: \n", query.split("(")[0])
     print("Starting get_cookie analysis")
 
-    all_rows = c.execute(query).fetchall()
-    print("len rows: ",len(all_rows))
+    try:
+        all_rows = c.execute(query).fetchall()
+    except sqlite3.OperationalError as e:
+        tb = traceback.format_exc()
+        print(tb)
+        conn = sqlite3.connect(crawl_db_path)
+        c = conn.cursor()
+        columns = c.execute("PRAGMA table_info(javascript_cookies);")
+        columnInfos = c.fetchall()
+        columnNames = [item[1] for item in columnInfos]
+        print("{} has the following columns: {}. Using old schema".format(CRAWL_NAME, columnNames))
+        query = query = f"""SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, 
+                        js.host, sv.visit_id, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv
+                                ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
+                                """
+        all_rows = c.execute(query).fetchall()
+
+    print("len rows: ", len(all_rows))
     for row in tqdm(all_rows):
         num_cookie_total += 1
         value = row["value"]
@@ -393,7 +400,8 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         expiry = row["expiry"]
         host = row["host"]
 
-        if CRAWL_NAME in ["2016-05", "2016-06"]:
+        if CRAWL_NAME in ["2016-03", "2016-04", "2016-08", "2016-09", "2017-01", "2017-02",
+                      "2017-03"]:
             is_http_only = row["isHttpOnly"]
             creationtime = row["creationTime"]
             basedomain = row["baseDomain"]
@@ -405,20 +413,16 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
             is_domain = row["is_host_only"]
             change = row["change_cause"]
             is_http_only = row["is_http_only"]
-            is_session = row["is_session"]
+            #is_session = row["is_session"]
         else:
             creationtime = row["creationTime"]
             is_domain = row["is_domain"]
             change = row["change"]
             is_http_only = row["is_http_only"]
-            is_session = row["is_session"]
+            #is_session = row["is_session"]
 
         if is_http_only == 1:
             num_http_cookies += 1
-
-        if is_session == 1:
-            num_session_cookies += 1
-            continue
 
         if is_domain == 0:
             # (1) the cookie has an expiration date over 90 days in the future
@@ -1265,6 +1269,8 @@ if __name__ == '__main__':
         selected_urls = tuple(tuple_id_url['site_url'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
+
+
         if CRAWL_NAME in ["2016-05", "2016-06"]:
             print("using site_url as primary key")
             get_cookies(crawl_db_path, selected_urls, MAX_RANK)
