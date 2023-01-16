@@ -1270,6 +1270,7 @@ if __name__ == '__main__':
             get_cookies(crawl_db_path, selected_urls, MAX_RANK)
         else:
             get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
 
     else:
