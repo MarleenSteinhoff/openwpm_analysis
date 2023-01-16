@@ -1263,12 +1263,12 @@ if __name__ == '__main__':
     if GET_COLUMNS:
         all_tables_to_csv(crawl_db_path)
 
-    elif SELECTED_IDS_ONLY:
+    if SELECTED_IDS_ONLY:
         tuple_id_url = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
-        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
+        #get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
     else:
         get_cookies(crawl_db_path, MAX_RANK)
