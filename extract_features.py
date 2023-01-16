@@ -1319,8 +1319,9 @@ if __name__ == '__main__':
         selected_visit_ids = tuple(selected_ids['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
 
-        extract_features_chunks(crawl_db_path, out_csv, selected_visit_ids)
-        if CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06"]:
+        if CRAWL_NAME in ["2019-06"]:
+            extract_features_chunks(crawl_db_path, out_csv, selected_visit_ids)
+        elif CRAWL_NAME in ["2016-03", "2016-04", "2016-05", "2016-06"]:
             print("This DB has no values in profile_cookies and flash_cookies. Skipping get_cookies")
             extract_features(crawl_db_path, out_csv, selected_visit_ids)
         else:
