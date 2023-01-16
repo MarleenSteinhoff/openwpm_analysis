@@ -1265,10 +1265,14 @@ if __name__ == '__main__':
         sys.exit(0)
 
     SELECTED_IDS_ONLY = True
+    GET_COLUMNS = True
     # Only to be used with the home-page only crawls
     MAX_RANK = None  # for debugging testing
+    
+    if GET_COLUMNS:
+        print_existing_columns(crawl_db_path)
 
-    if SELECTED_IDS_ONLY:
+    elif SELECTED_IDS_ONLY:
         tuple_id_url = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
         selected_urls = tuple(tuple_id_url['site_url'].tolist())
