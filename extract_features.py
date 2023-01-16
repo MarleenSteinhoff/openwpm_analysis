@@ -1266,19 +1266,10 @@ if __name__ == '__main__':
     elif SELECTED_IDS_ONLY:
         tuple_id_url = get_visit_id_site_url_mapping(crawl_db_path)
         selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
-        selected_urls = tuple(tuple_id_url['site_url'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
-
-
-        if CRAWL_NAME in ["2016-05", "2016-06"]:
-            print("using site_url as primary key")
-            get_cookies(crawl_db_path, selected_urls, MAX_RANK)
-        else:
-            get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
-
+        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
         extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
-
     else:
         get_cookies(crawl_db_path, MAX_RANK)
         extract_features(crawl_db_path, out_csv)  # process all rows
