@@ -774,7 +774,7 @@ def thread_worker(i, in_q, out_q, db_file):
             arguments = row["arguments"]
 
             third_party_scripts = False
-            arguments_None_Type = False
+            arguments_none_type_flag = False
             script_feat_flag = False
             script_feat = []
             script_ranks = True
@@ -811,7 +811,7 @@ def thread_worker(i, in_q, out_q, db_file):
                 script_feat_flag = True
                 script_feat.append(feat)
             else:
-                arguments_None_Type = True
+                arguments_none_type_flag = True
 
             # Canvas fingerprinting
             if symbol in CANVAS_READ_FUNCS and operation == "call":
@@ -881,7 +881,7 @@ def thread_worker(i, in_q, out_q, db_file):
                 value,
                 arguments,
                 third_party_scripts,
-                arguments_None_Type,
+                arguments_none_type_flag,
                 script_feat_flag,
                 script_feat,
                 script_ranks,
