@@ -380,13 +380,18 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     except sqlite3.OperationalError as e:
         tb = traceback.format_exc()
         print(tb)
-        print_existing_columns(db_file)
+        if print_existing_columns(db_file):
+            query = f"""SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, 
+                            js.host, sv.visit_id, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv
+                                    ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
+                                    """
+        else:
+            query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, js.is_session, js.is_host_only,
+                                            js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
+                                                    ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
+                                                    """
 
-        query = query = f"""SELECT js.visit_id, js.name, js.path, js.creationTime, js.expiry, js.value, 
-                        js.host, sv.visit_id, sv.site_url FROM profile_cookies as js LEFT JOIN site_visits as sv
-                                ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
-                                """
-        print("using old schema")
+
         all_rows = c.execute(query).fetchall()
 
     print("len rows: ", len(all_rows))
@@ -990,12 +995,27 @@ def get_request_triggering_scripts(db_file):
 
 
 def print_existing_columns(crawl_db_path):
+    has_profile_cookies = False
     conn = sqlite3.connect(crawl_db_path)
     c = conn.cursor()
-    columns = c.execute("PRAGMA table_info(javascript_cookies);")
+
+    columns = c.execute(".tables;")
+    tableInfos = c.fetchall()
+    tableNames = [item[1] for item in tableInfos]
+    print("{} has the following tables: {}.".format(CRAWL_NAME, tableNames))
+
+    if "profile_cookies" in tableNames:
+        columns = c.execute("PRAGMA table_info(profile_cookies);")
+        has_profile_cookies = True
+    else:
+        columns = c.execute("PRAGMA table_info(javascript_cookies);")
+
     columnInfos = c.fetchall()
     columnNames = [item[1] for item in columnInfos]
-    print("{} has the following columns: {}. Using old schema".format(CRAWL_NAME, columnNames))
+    print("{} has the following columns: {}.".format(CRAWL_NAME, columnNames))
+
+    return has_profile_cookies
+
 
 def get_battery_fingerprinters(battery_level_access,
                                battery_charging_time_access,
