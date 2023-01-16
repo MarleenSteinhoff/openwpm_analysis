@@ -314,13 +314,6 @@ SENSOR_FEATURES = [
     "addEventListener_devicemotion"
     # ,"addEventListener_userproximity"
 ]
-"""
-    #query = "SELECT * FROM javascript_cookies"
-    js_cookies = pd.read_sql_query(query, connection)
-    b = js_cookies.loc[js_cookies["is_session"] == 1]
-    d = js_cookies.size
- """
-
 
 def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     print("get_cookies")
@@ -357,7 +350,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                                         """
 
     elif CRAWL_NAME in ["2019-06"]:
-        query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, js.is_session, js.is_host_only,
+        query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, js.is_host_only,
                                 js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
                                         ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                         """
@@ -365,8 +358,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
         print("else")
         # no session and domain cookies
         query = f"""SELECT js.visit_ffid, js.is_http_only, 
-                js.name, js.path, js.creationTime, js.expiry, js.value, js.is_session, 
-                js.policy, js.host, js.is_domain, 
+                js.name, js.path, js.creationTime, js.expiry, js.value, js.policy, js.host, js.is_domain, 
                 js.is_secure,  js.change, sv.site_url
                          FROM javascript_cookies as js LEFT JOIN site_visits as sv
                          ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} AND js.is_domain = 0
@@ -386,7 +378,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
                                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                     """
         else:
-            query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, js.is_session, js.is_host_only,
+            query = f"""SELECT js.visit_id, js.name, js.path, js.is_http_only, js.time_stamp, js.expiry, js.value, js.is_host_only,
                                             js.host, js.change_cause, sv.site_url, sv.visit_id FROM javascript_cookies as js LEFT JOIN site_visits as sv
                                                     ON sv.visit_id = js.visit_id WHERE js.visit_id IN {format(id_urls_map)} 
                                                     """
@@ -415,13 +407,13 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
             is_domain = row["is_host_only"]
             change = row["change_cause"]
             is_http_only = row["is_http_only"]
-            #is_session = row["is_session"]
+
         else:
             creationtime = row["creationTime"]
             is_domain = row["is_domain"]
             change = row["change"]
             is_http_only = row["is_http_only"]
-            #is_session = row["is_session"]
+
 
         if is_http_only == 1:
             num_http_cookies += 1

@@ -70,9 +70,7 @@ function decompress_and_process(){
   echo "Will extract $ARCHIVE_BASE_NAME to $EXTRACTION_DIR"
   echo "-------------EXTRACT START------------"
   cd $CENSUS_LZ4_DATA_PATH
-  #time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
-  echo "time lz4 -qdc --no-sparce $ARCHIVE_BASE_NAME > $CRAWL_DATA_PATH"
-  time lz4 -qdc --no-sparse $ARCHIVE_BASE_NAME > $CRAWL_DATA_PATH
+  time lz4 -qdc --no-sparse $1 | tar xf - -C $EXTRACTION_DIR
   cd $CODE_DIR
   echo "-------------PROCESS START------------"
   echo "python analyze_crawl.py $EXTRACTION_DIR $ROOT_OUT_DIR"
