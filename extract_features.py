@@ -997,7 +997,7 @@ def get_battery_fingerprinters(battery_level_access,
 
 
 def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None):
-    print("extract_features")
+    print("extract_features_chunks")
     """Extract fingerprinting related features from the javascript table
     of the crawl database.
     Although we use script_url to attribute the access or the function call,
@@ -1043,9 +1043,8 @@ def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_ran
 
     print("processing the dataset in chunks")
 
-    m = max(id_urls_map)
-
     while upper <= max(id_urls_map):
+        print("upper {}, lower {}, chunk {}".format(upper, lower, chunk))
         query = f"""SELECT sv.site_url, sv.visit_id, js.visit_id,
                         js.script_url, js.operation, js.arguments, js.symbol, js.value
                         FROM javascript as js LEFT JOIN site_visits as sv
@@ -1518,7 +1517,6 @@ if __name__ == '__main__':
     GET_COLUMNS = True
     # Only to be used with the home-page only crawls
     MAX_RANK = None  # for debugging testing
-    
     if GET_COLUMNS:
         all_tables_to_csv(crawl_db_path)
 
@@ -1527,8 +1525,13 @@ if __name__ == '__main__':
         selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
-        #get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
-        extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
+
+        if CRAWL_NAME in ["2019-06"]:
+            extract_features_chunks(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
+        else:
+            extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
+
+        get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
     else:
         get_cookies(crawl_db_path, MAX_RANK)
         extract_features(crawl_db_path, out_csv)  # process all rows
