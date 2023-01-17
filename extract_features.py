@@ -1029,8 +1029,6 @@ def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_ran
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
 
-    overall_script_ranks = get_script_freqs_from_db(db_file)
-
     connection = sqlite3.connect(db_file)
     connection.row_factory = sqlite3.Row
     c = connection.cursor()
@@ -1249,9 +1247,6 @@ def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_ran
             json_string = json.dumps(script_ranks, cls=SetEncoder)
             fp.write(json_string)
 
-        with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "overall_script_ranks.json")), 'w') as fp:
-            json_string = json.dumps(overall_script_ranks, cls=SetEncoder)
-            fp.write(json_string)
 
         print("Finished feature extraction")
 def get_canvas_font_fingerprinters(canvas_used_fonts,
@@ -1526,7 +1521,7 @@ if __name__ == '__main__':
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
 
-        if CRAWL_NAME in ["2019-06"]:
+        if CRAWL_NAME in ["2019-06", "2018-06"]:
             extract_features_chunks(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
         else:
             extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
