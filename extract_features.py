@@ -1055,7 +1055,7 @@ def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_ran
 ##########################
     print("processing the dataset in chunks")
 
-    chunk_size = 250 # amount of visit_ids per iteration
+    chunk_size = 250000 # amount of visit_ids per iteration
     l = list(split(id_urls_map, chunk_size))
     for chunk in l:
 
