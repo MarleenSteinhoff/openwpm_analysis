@@ -371,7 +371,7 @@ def get_cookies(db_file, id_urls_map=tuple(), max_rank=None):
     else:
         print("else")
         # no session and domain cookies
-        query = f"""SELECT js.visit_ffid, js.is_http_only, 
+        query = f"""SELECT js.visit_id, js.is_http_only, 
                 js.name, js.path, js.creationTime, js.expiry, js.value, js.policy, js.host, js.is_domain, 
                 js.is_secure,  js.change, sv.site_url
                          FROM javascript_cookies as js LEFT JOIN site_visits as sv
@@ -526,7 +526,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
     request_triggering_scripts = set()
     third_party_request_triggering_scripts = set()
     first_party_with_fp = set()
-    # third_party_request_triggering_scripts = set()
+    third_party_request_triggering_scripts = set()
 
     # simple features
     script_ranks = defaultdict(set)  # site ranks where a script is embedded
@@ -607,6 +607,7 @@ def extract_features(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None)
                 else:
                     script_features[script_adress] = script_feat_list
             if third_party_script_flag:
+                first_party_with_fp.add(site_url)
                 third_party_scripts.add(script_adress)
             if canvas_style_flag:
                 if script_adress in canvas_styles:
@@ -870,7 +871,11 @@ def thread_worker(i, in_q, out_q, db_file):
             # Audio Context API
             elif symbol in AUDIO_CONTEXT_FUNCS:
                 audio_ctx_calls_flag = symbol
-
+        except Exception as e:
+            tb = traceback.format_exc(e)
+            print(tb)
+            print("extract_features failed in thread {} with visit_id {}".format(i, row["visit_id"]))
+        finally:
             result = [
                 visit_id,
                 site_url,
@@ -898,11 +903,6 @@ def thread_worker(i, in_q, out_q, db_file):
                 audio_ctx_calls_flag, req_scripts_list, third_party_req_scripts_list,
                 script_adress]
 
-        except Exception as e:
-            tb = traceback.format_exc()
-            print(tb)
-            print("extract_features failed in thread {} with visit_id {}".format(i, row["visit_id"]))
-        finally:
             out_q.put(result)
             in_q.task_done()
 
@@ -1009,6 +1009,10 @@ def get_battery_fingerprinters(battery_level_access,
 
     return battery_fingerprinters
 
+def split(list_a, chunk_size):
+
+  for i in range(0, len(list_a), chunk_size):
+    yield list_a[i:i + chunk_size]
 
 def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None):
     print("extract_features_chunks")
@@ -1042,227 +1046,223 @@ def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_ran
     script_features = defaultdict(set)
     adblock_checked_scripts = set()  # to prevent repeated lookups
     third_party_scripts = set()
-
+    first_party_script = set()
     connection = sqlite3.connect(db_file)
     connection.row_factory = sqlite3.Row
     c = connection.cursor()
 
 
 ##########################
-    chunk = 500
-    lower = 0
-    upper = chunk + lower
-
     print("processing the dataset in chunks")
 
-    while upper <= max(id_urls_map):
-        print("upper {}, lower {}, chunk {}".format(upper, lower, chunk))
+    chunk_size = 250 # amount of visit_ids per iteration
+    l = list(split(id_urls_map, chunk_size))
+    for chunk in l:
+
         query = f"""SELECT sv.site_url, sv.visit_id, js.visit_id,
                         js.script_url, js.operation, js.arguments, js.symbol, js.value
                         FROM javascript as js LEFT JOIN site_visits as sv
                         ON sv.visit_id = js.visit_id WHERE
-                        js.script_url <> '' AND js.visit_id IN {format(id_urls_map)} 
+                        js.script_url <> '' AND js.visit_id IN {format(chunk)} 
                         """
 
-        query += " AND js.visit_id > %i" % lower
-        query += " AND js.visit_id <= %i " % upper
+
+        all_rows = c.execute(query).fetchall()
+        print("len rows in this chunk {}".format(len(all_rows)))
+        print("Query executed")
+
+
+        in_queue = queue.Queue()
+        out_queue = queue.Queue()
+
+        for i in range(THREAD_COUNT):
+            worker = Thread(target=thread_worker, args=(i, in_queue, out_queue, db_file), daemon=True)
+            # worker_stats = Thread(target=stats_worker, args=(i, in_queue, out_queue), daemon=True)
+            # worker_stats.start()
+            worker.start()
+        print("Workers running")
+        for row in all_rows:
+            in_queue.put(row)
+        print("Work queue filled, {} jobs".format(in_queue.qsize()))
+        completed_tasks = 0
 
         print("Starting feature extraction")
-        for row in tqdm(c.execute(query).fetchall()):
-            lower += chunk
-            upper += chunk
-            visit_id = row["visit_id"]
-            site_url = row["site_url"]
-            script_url = row["script_url"]
-            operation = row["operation"]
-            symbol = row["symbol"]
-            value = row["value"]
-            arguments = row["arguments"]
+        with tqdm(total=len(all_rows)) as bar:
 
-            # Exclude relative URLs, data urls, blobs, javascript URLs
-            if not (script_url.startswith("http://")
-                    or script_url.startswith("https://")):
-                continue
+            while completed_tasks < len(all_rows):
+                result = out_queue.get()
 
-            script_adress = get_base_script_url(script_url)
+                visit_id, site_url, script_url, operation, symbol, value, arguments, third_party_script_flag, \
+                    arguments_none_type_flag, script_feat_flag, script_feat_list, script_rank_flag, canvas_style_flag, canvas_read_flag, \
+                    canvas_write_flag, canvas_text_list, canvas_banned_call_flag, canvas_used_fonts_list, \
+                    canvas_measure_text_call_flag, webrtc_call_flag, battery_level_access_flag, \
+                    battery_charging_time_access_flag, battery_discharging_time_access_flag, audio_ctx_call_flag, \
+                    req_scripts_set, third_party_req_scripts_set, script_adress = result
 
-            third_party_script = False
-            if is_third_party(script_url, site_url):
-                third_party_scripts.add(script_adress)
-                third_party_script = True
+                num_nonetype_arguments = defaultdict()
 
-            # get the simple feature for this call
-            feat = get_simple_feature_from_js_info(operation, arguments, symbol)
-            if feat is not None:
-                script_features[script_adress].add(feat)
-            else:
-                if script_url in num_nonetype_arguments:
-                    num_nonetype_arguments[script_url] += 1
-                else:
-                    num_nonetype_arguments[script_url] = 1
-            if script_adress in script_ranks:
-                script_ranks[script_adress].add(visit_id)
-            else:
-                script_ranks[script_adress] = {visit_id}
+                # Canvas fingerprinting
+                if script_feat_flag:
+                    if script_adress in script_features:
+                        script_features[script_adress].append(script_feat_list)
+                    else:
+                        script_features[script_adress] = script_feat_list
+                if third_party_script_flag:
+                    third_party_scripts.add(script_adress)
+                    first_party_script.add(site_url)
+                if canvas_style_flag:
+                    if script_adress in canvas_styles:
+                        canvas_styles[script_adress][visit_id].add(value)
+                    else:
+                        canvas_styles[script_adress][visit_id] = {value}
+                if canvas_read_flag:
+                    if script_adress in canvas_reads:
+                        canvas_reads[script_adress].add(visit_id)
+                    else:
+                        canvas_reads[script_adress] = {visit_id}
+                if canvas_write_flag:
+                    if script_adress in canvas_writes:
+                        canvas_writes[script_adress].add(visit_id)
+                        canvas_texts[(script_adress, visit_id)].add(canvas_text_list)
+                    else:
+                        canvas_writes[script_adress] = {visit_id}
+                        canvas_texts[(script_adress, visit_id)] = {canvas_text_list}
+                if canvas_banned_call_flag:
+                    if script_adress in canvas_banned_calls:
+                        canvas_banned_calls[script_adress].add(visit_id)
+                    else:
+                        canvas_banned_calls[script_adress] = {visit_id}
 
-            """
-            # Check easylist and easyprivacy blocked status
-            # if we didn't do it for this script url before
-            if script_url not in adblock_checked_scripts:
+                if canvas_used_fonts_list:
+                    try:
+                        canvas_used_fonts[script_adress][visit_id].add(value)
+                    except KeyError:
+                        canvas_used_fonts[script_adress][visit_id] = {value}
 
-                if easylist_rules.should_block(
-                        script_url, {'script': True,
-                                     'third-party': third_party_script}):
-                    easylist_blocked_scripts.add(script_adress)
+                if canvas_measure_text_call_flag:
+                    if arguments_none_type_flag:
+                        text = json.loads(arguments)["0"]
+                        canvas_measure_text_calls[(script_adress, visit_id, text)] += 1
 
-                if easyprivacy_rules.should_block(
-                        script_url, {'script': True,
-                                     'third-party': third_party_script}):
-                    easyprivacy_blocked_scripts.add(script_adress)
+                if webrtc_call_flag:
+                    try:
+                        webrtc_calls[script_adress][visit_id].add(symbol)
+                    except KeyError:
+                        webrtc_calls[script_adress][visit_id] = {symbol}
 
-                if is_blocked_by_disconnect(script_url, disconnect_blocklist):
-                    disconnect_blocked_scripts.add(script_adress)
-         """
+                # Battery Status API
+                if battery_level_access_flag:
+                    if script_adress in battery_level_access:
+                        battery_level_access[script_adress].add(visit_id)
+                    else:
+                        battery_level_access[script_adress] = {visit_id}
 
-            # High level features
-            # Canvas fingerprinting
-            if symbol in CANVAS_READ_FUNCS and operation == "call":
-                if (symbol == "CanvasRenderingContext2D.getImageData" and
-                        is_get_image_data_dimensions_too_small(arguments)):
-                    continue
-                canvas_reads[script_adress].add(visit_id)
-            elif symbol in CANVAS_WRITE_FUNCS:
-                text = get_canvas_text(arguments)
-                # Python miscalculates the length of unicode strings that contain
-                # surrogate pairs such as emojis. This make the string look longer
-                # it really is and cause false positives.
-                # For instance "🏴​󠁧​󠁢​󠁥​󠁮​󠁧", which is written onto canvas by
-                # Wordpress to check emoji support, gives a length of 13.
-                # We ignore non-ascii characters to prevent these false positives.
-                if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
-                    canvas_writes[script_adress].add(visit_id)
-                    # the following is used to debug false positives
-                    canvas_texts[(script_adress, visit_id)].add(text)
-            elif symbol == "CanvasRenderingContext2D.fillStyle" and \
-                    operation == "call":
-                canvas_styles[script_adress][visit_id].add(value)
-            elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
-                canvas_banned_calls[script_adress].add(visit_id)
-            # Canvas font fingerprinting
-            elif symbol == "CanvasRenderingContext2D.font" and operation == "set":
-                canvas_used_fonts[script_adress][visit_id].add(value)
-            elif symbol == "CanvasRenderingContext2D.measureText" and \
-                    operation == "call":
-                text = json.loads(arguments)["0"]
-                canvas_measure_text_calls[(script_adress, visit_id, text)] += 1
-            elif (operation == "call" and symbol in WEBRTC_FP_CALLS) or \
-                    (operation == "set" and
-                     symbol == "RTCPeerConnection.onicecandidate"):
-                webrtc_calls[script_adress][visit_id].add(symbol)
+                if battery_charging_time_access_flag:
+                    if script_adress in battery_charging_time_access:
+                        battery_charging_time_access[script_adress].add(visit_id)
+                    else:
+                        battery_charging_time_access[script_adress] = {visit_id}
 
-            # Battery Status API
-            elif operation == "get" and symbol in "BatteryManager.level":
-                battery_level_access[script_adress].add(visit_id)
-            elif operation == "get" and symbol in BATTERY_CHARGING_TIME_CALLS:
-                battery_charging_time_access[script_adress].add(visit_id)
-            elif operation == "get" and symbol in BATTERY_DISCHARGING_TIME_CALLS:
-                battery_discharging_time_access[script_adress].add(visit_id)
-            elif (operation == "call"
-                  and symbol == "BatteryManager.addEventListener"):
-                event_type = json.loads(arguments)["0"]
-                if event_type == "levelchange":
-                    battery_level_access[script_adress].add(visit_id)
-                elif event_type == "chargingtimechange":
-                    battery_charging_time_access[script_adress].add(visit_id)
-                elif event_type == "dischargingtimechange":
-                    battery_discharging_time_access[script_adress].add(visit_id)
+                if battery_discharging_time_access_flag:
+                    if script_adress in battery_discharging_time_access:
+                        battery_discharging_time_access[script_adress].add(visit_id)
+                    else:
+                        battery_discharging_time_access[script_adress] = {visit_id}
 
-            # Audio Context API
-            elif symbol in AUDIO_CONTEXT_FUNCS:
-                audio_ctx_calls[script_adress][visit_id].add(symbol)
+                # Audio Context API
+                if audio_ctx_call_flag:
+                    try:
+                        audio_ctx_calls[script_adress][visit_id].add(symbol)
+                    except KeyError:
+                        audio_ctx_calls[script_adress][visit_id].add = {symbol}
 
-        print("Feature extraction done, saving results")
-        canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
-                                                          canvas_writes,
-                                                          canvas_styles,
-                                                          canvas_banned_calls,
-                                                          canvas_texts)
-        canvas_font_fingerprinters = \
-            get_canvas_font_fingerprinters(canvas_used_fonts,
-                                           canvas_measure_text_calls)
-        audio_ctx_fingerprinters = get_audio_ctx_fingerprinters(audio_ctx_calls)
-        webrtc_fingerprinters = get_webrtc_fingerprinters(webrtc_calls)
-        battery_fingerprinters = get_battery_fingerprinters(
-            battery_level_access, battery_charging_time_access,
-            battery_discharging_time_access)
+                if req_scripts_set is not None:
+                    request_triggering_scripts = req_scripts_set
+                if third_party_req_scripts_set is not None:
+                    third_party_request_triggering_scripts = third_party_req_scripts_set
 
-        request_triggering_scripts, third_party_request_triggering_scripts = \
-            get_request_triggering_scripts(db_file)
+                completed_tasks += 1
+                # print("Done. Completed {} tasks".format(completed_tasks))
+                out_queue.task_done()
+                bar.update()
 
-        if DEBUG:
-            print("audio_ctx_fingerprinters", audio_ctx_fingerprinters)
-            print("canvas_fingerprinters", canvas_fingerprinters)
-            print("canvas_font_fingerprinters", canvas_font_fingerprinters)
-            print("webrtc_fingerprinters", webrtc_fingerprinters)
-            print("battery_fingerprinters", battery_fingerprinters)
-            print("request_triggering_scripts", request_triggering_scripts)
-            print("third_party_request_triggering_scripts", third_party_request_triggering_scripts)
-            print(THIRD_PARTY_SCRIPT, third_party_scripts)
-            # print(EASYLIST_BLOCKED, easylist_blocked_scripts)
-            # print(EASYPRIVACY_BLOCKED, easyprivacy_blocked_scripts)
-            # print UBLOCK_ORIGIN_BLOCKED, ublock_blocked_scripts
-            # print(DISCONNECT_BLOCKED, disconnect_blocked_scripts)
+        in_queue.join()
 
-        high_level_feat_dict = {
-            NONE_TYPE_ARGS: num_nonetype_arguments,
-            CANVAS_FP: canvas_fingerprinters,
-            CANVAS_FONT_FP: canvas_font_fingerprinters,
-            AUDIO_CTX_FP: audio_ctx_fingerprinters,
-            WEBRTC_FP: webrtc_fingerprinters,
-            BATTERY_FP: battery_fingerprinters,
-            TRIGGERS_REQUEST: request_triggering_scripts,
-            TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
-            # EASYLIST_BLOCKED: easylist_blocked_scripts,
-            # EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
-            # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
-            # DISCONNECT_BLOCKED: disconnect_blocked_scripts,
-            THIRD_PARTY_SCRIPT: third_party_scripts
-        }
+    print("Feature extraction done, saving results")
+    canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
+                                                      canvas_writes,
+                                                      canvas_styles,
+                                                      canvas_banned_calls,
+                                                      canvas_texts)
+    canvas_font_fingerprinters = \
+        get_canvas_font_fingerprinters(canvas_used_fonts,
+                                       canvas_measure_text_calls)
+    audio_ctx_fingerprinters = get_audio_ctx_fingerprinters(audio_ctx_calls)
+    webrtc_fingerprinters = get_webrtc_fingerprinters(webrtc_calls)
+    battery_fingerprinters = get_battery_fingerprinters(
+        battery_level_access, battery_charging_time_access,
+        battery_discharging_time_access)
 
-        count_dict = {
-            NUM_CANVAS_FP: len(canvas_fingerprinters),
-            NUM_CANVAS_FONT_FP: len(canvas_font_fingerprinters),
-            NUM_AUDIO_CTX_FP: len(audio_ctx_fingerprinters),
-            NUM_WEBRTC_FP: len(webrtc_fingerprinters),
-            NUM_BATTERY_FP: len(battery_fingerprinters),
-            NUM_TRIGGERS_REQUEST: len(request_triggering_scripts),
-            NUM_TRIGGERS_TP_REQUEST: len(third_party_request_triggering_scripts),
-            # NUM_EASYLIST_BLOCKED: len(easylist_blocked_scripts),
-            # NUM_EASYPRIVACY_BLOCKED: len(easyprivacy_blocked_scripts),
+    request_triggering_scripts, third_party_request_triggering_scripts = \
+        get_request_triggering_scripts(db_file)
 
-            # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
-            # NUM_DISCONNECT_BLOCKED: len(disconnect_blocked_scripts),
-            NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts)
-        }
+    if DEBUG:
+        print("audio_ctx_fingerprinters", audio_ctx_fingerprinters)
+        print("canvas_fingerprinters", canvas_fingerprinters)
+        print("canvas_font_fingerprinters", canvas_font_fingerprinters)
+        print("webrtc_fingerprinters", webrtc_fingerprinters)
+        print("battery_fingerprinters", battery_fingerprinters)
+        print("request_triggering_scripts", request_triggering_scripts)
+        print("third_party_request_triggering_scripts", third_party_request_triggering_scripts)
+        print(THIRD_PARTY_SCRIPT, third_party_scripts)
+        # print(EASYLIST_BLOCKED, easylist_blocked_scripts)
+        # print(EASYPRIVACY_BLOCKED, easyprivacy_blocked_scripts)
+        # print UBLOCK_ORIGIN_BLOCKED, ublock_blocked_scripts
+        # print(DISCONNECT_BLOCKED, disconnect_blocked_scripts)
 
-        with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "count_features.json")), 'w') as fp:
-            json_string = json.dumps(count_dict, cls=SetEncoder)
-            fp.write(json_string)
+    high_level_feat_dict = {
+        NONE_TYPE_ARGS: num_nonetype_arguments,
+        CANVAS_FP: canvas_fingerprinters,
+        CANVAS_FONT_FP: canvas_font_fingerprinters,
+        AUDIO_CTX_FP: audio_ctx_fingerprinters,
+        WEBRTC_FP: webrtc_fingerprinters,
+        BATTERY_FP: battery_fingerprinters,
+        TRIGGERS_REQUEST: request_triggering_scripts,
+        TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
+        # EASYLIST_BLOCKED: easylist_blocked_scripts,
+        # EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
+        # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
+        # DISCONNECT_BLOCKED: disconnect_blocked_scripts,
+        THIRD_PARTY_SCRIPT: third_party_scripts
+    }
 
-        with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_features.json")), 'w') as fp:
-            json_string = json.dumps(script_features, cls=SetEncoder)
-            fp.write(json_string)
+    count_dict = {
+        NUM_CANVAS_FP: len(canvas_fingerprinters),
+        NUM_CANVAS_FONT_FP: len(canvas_font_fingerprinters),
+        NUM_AUDIO_CTX_FP: len(audio_ctx_fingerprinters),
+        NUM_WEBRTC_FP: len(webrtc_fingerprinters),
+        NUM_BATTERY_FP: len(battery_fingerprinters),
+        NUM_TRIGGERS_REQUEST: len(request_triggering_scripts),
+        NUM_TRIGGERS_TP_REQUEST: len(third_party_request_triggering_scripts),
+        NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts),
+        NUM_FIRST_PARTIES: len(first_party_script)
+    }
 
-        with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "high_level_feat_dict.json")), 'w') as fp:
-            json_string = json.dumps(high_level_feat_dict, cls=SetEncoder)
-            fp.write(json_string)
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "count_features_chunks.json")), 'w') as fp:
+        json_string = json.dumps(count_dict, cls=SetEncoder)
+        fp.write(json_string)
 
-        with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_ranks.json")), 'w') as fp:
-            json_string = json.dumps(script_ranks, cls=SetEncoder)
-            fp.write(json_string)
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "high_level_feat_dict_chunks.json")), 'w') as fp:
+        json_string = json.dumps(high_level_feat_dict, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_ranks_chunks.json")), 'w') as fp:
+        json_string = json.dumps(script_ranks, cls=SetEncoder)
+        fp.write(json_string)
 
 
         print("Finished feature extraction")
+
 def get_canvas_font_fingerprinters(canvas_used_fonts,
                                    canvas_measure_text_calls):
     """
@@ -1372,9 +1372,11 @@ def get_canvas_fingerprinters(canvas_reads, canvas_writes, canvas_styles,
                        canvas_texts[(script_address, canvas_rw_visit)]))
                 continue
             canvas_fingerprinters.add(script_address)
+            """ 
             print(("Canvas fingerprinter", script_address, "visit#",
                    canvas_rw_visit,
                    canvas_texts[(script_address, canvas_rw_visit)]))
+                   """
             break
 
     return canvas_fingerprinters
@@ -1523,7 +1525,7 @@ if __name__ == '__main__':
         sys.exit(0)
 
     SELECTED_IDS_ONLY = True
-    GET_COLUMNS = True
+    GET_COLUMNS = False
     # Only to be used with the home-page only crawls
     MAX_RANK = None  # for debugging testing
     if GET_COLUMNS:
@@ -1534,7 +1536,6 @@ if __name__ == '__main__':
         selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
-
         if CRAWL_NAME in ["2019-06", "2018-06"]:
             extract_features_chunks(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
         else:
