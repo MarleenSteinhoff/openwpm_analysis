@@ -1535,7 +1535,7 @@ if __name__ == '__main__':
         selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
-        if CRAWL_NAME in ["2019-06", "2018-06"]:
+        if CRAWL_NAME in ["2019-06", "2018-06", "2018-01"]:
             extract_features_chunks(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
         else:
             extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
