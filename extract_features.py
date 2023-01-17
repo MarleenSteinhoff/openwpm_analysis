@@ -258,11 +258,11 @@ def is_get_image_data_dimensions_too_small(arguments):
         get_image_data_args = json.loads(arguments)
 
         if not isinstance(get_image_data_args, dict):
-            print("arguments encoding wrong, get_image_data_args of type {}, encoding arguments {}".format(type(get_image_data_args), arguments))
+            print("arguments encoding wrong, get_image_data_args {}, encoding arguments {}".format(get_image_data_args, arguments))
             arguments_dict = json.dumps(arguments)
             get_image_data_args = json.loads(arguments_dict)
             print("encoded arguments {}, resulting get_image_data_args: {}".format(arguments_dict, get_image_data_args))
-
+            return False
     except Exception as e:
         tb = traceback.format_exc()
         print(tb)
@@ -764,7 +764,6 @@ def thread_worker(i, in_q, out_q, db_file):
         try:
 
             row = in_q.get()
-
             visit_id = row["visit_id"]
             site_url = row["site_url"]
             script_url = row["script_url"]
