@@ -257,16 +257,13 @@ def is_get_image_data_dimensions_too_small(arguments):
     try:
         get_image_data_args = json.loads(arguments)
 
-        if not isinstance(get_image_data_args, dict):
-            print("arguments encoding wrong, get_image_data_args {}, encoding arguments {}".format(get_image_data_args, arguments))
-            arguments_dict = json.dumps(arguments)
-            get_image_data_args = json.loads(arguments_dict)
-            print("encoded arguments {}, resulting get_image_data_args: {}".format(arguments_dict, get_image_data_args))
-            return False
     except Exception as e:
+        print("arguments encoding wrong, get_image_data_args {}, arguments {}".format(get_image_data_args,
+                                                                                               arguments))
         tb = traceback.format_exc()
         print(tb)
         print("error with getting image data dimensions with arguments:", arguments)
+        return False
 
     sw = safe_int(get_image_data_args.get("2", 0))
     sh = safe_int(get_image_data_args.get("3", 0))
