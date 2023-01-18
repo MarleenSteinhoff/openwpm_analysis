@@ -1309,11 +1309,10 @@ def extract_features_chunks_linear(db_file, out_csv, id_urls_map=defaultdict(), 
         print("chunk number {}/{}".format(counter, len(l)))
 
 
-        query = f"""SELECT sv.site_url, sv.visit_id, js.visit_id,
-                        js.script_url, js.operation, js.arguments, js.symbol, js.value
-                        FROM javascript as js LEFT JOIN site_visits as sv
-                        ON sv.visit_id = js.visit_id WHERE
-                        js.script_url <> '' AND js.visit_id IN {format(chunk)} 
+        query = f"""     Select js.visit_id,
+                        js.script_url, js.operation, js.arguments, js.symbol, js.value from javascript as js
+                        join (Select sv.site_url, sv.visit_id FROM site_visits as sv) where
+                        js.visit_id IN {format(chunk)}  ON sv.visit_id = js.visit_id;
                         """
 
         all_rows = c.execute(query).fetchall()
