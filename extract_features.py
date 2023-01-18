@@ -1260,7 +1260,7 @@ def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_ran
         print("Finished feature extraction")
 
 def extract_features_chunks_linear(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None):
-    print("extract_features_chunks")
+    print("extract_features_chunks LINEAR")
     """Extract fingerprinting related features from the javascript table
     of the crawl database.
     Although we use script_url to attribute the access or the function call,
@@ -1300,9 +1300,14 @@ def extract_features_chunks_linear(db_file, out_csv, id_urls_map=defaultdict(), 
 ##########################
     print("processing the dataset in chunks")
 
-    chunk_size = 250000 # amount of visit_ids per iteration
+    chunk_size = 25 # amount of visit_ids per iteration
+    print("chunk_size ", chunk_size)
     l = list(split(id_urls_map, chunk_size))
+    counter = 0
     for chunk in l:
+        counter += 1
+        print("chunk number {}/{}".format(counter, len(l)))
+
 
         query = f"""SELECT sv.site_url, sv.visit_id, js.visit_id,
                         js.script_url, js.operation, js.arguments, js.symbol, js.value
@@ -1310,7 +1315,6 @@ def extract_features_chunks_linear(db_file, out_csv, id_urls_map=defaultdict(), 
                         ON sv.visit_id = js.visit_id WHERE
                         js.script_url <> '' AND js.visit_id IN {format(chunk)} 
                         """
-
 
         all_rows = c.execute(query).fetchall()
         print("len rows in this chunk {}".format(len(all_rows)))
