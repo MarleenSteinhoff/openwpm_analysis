@@ -258,8 +258,7 @@ def is_get_image_data_dimensions_too_small(arguments):
         get_image_data_args = json.loads(arguments)
 
     except Exception as e:
-        print("arguments encoding wrong, get_image_data_args {}, arguments {}".format(get_image_data_args,
-                                                                                               arguments))
+        print("arguments encoding wrong, arguments {} not encoded".format(arguments))
         tb = traceback.format_exc()
         print(tb)
         print("error with getting image data dimensions with arguments:", arguments)
