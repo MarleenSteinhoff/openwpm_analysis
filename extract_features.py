@@ -1330,6 +1330,9 @@ def extract_features_chunks_linear(db_file, out_csv, id_urls_map=defaultdict(), 
             symbol = row["symbol"]
             value = row["value"]
             arguments = row["arguments"]
+            if arguments is None:
+                print(visit_id, site_url, operation, symbol, value, arguments)
+                continue
 
             # Exclude relative URLs, data urls, blobs, javascript URLs
             if not (script_url.startswith("http://")
