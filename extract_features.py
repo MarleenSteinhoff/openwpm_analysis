@@ -1297,22 +1297,25 @@ def extract_features_chunks_linear(db_file, out_csv, id_urls_map=defaultdict(), 
     c = connection.cursor()
 
 
-##########################
+    ##########################
     print("processing the dataset in chunks")
 
-    chunk_size = 25 # amount of visit_ids per iteration
+    chunk_size = 20000 # amount of visit_ids per iteration
     print("chunk_size ", chunk_size)
     l = list(split(id_urls_map, chunk_size))
     counter = 0
+    #c.execute("CREATE INDEX i1 ON javascript(visit_id);")
+    c.execute("CREATE INDEX i2 ON site_visits(visit_id);")
     for chunk in l:
         counter += 1
         print("chunk number {}/{}".format(counter, len(l)))
 
 
-        query = f"""     Select js.visit_id,
-                        js.script_url, js.operation, js.arguments, js.symbol, js.value from javascript as js
-                        join (Select sv.site_url, sv.visit_id FROM site_visits as sv) where
-                        js.visit_id IN {format(chunk)}  ON sv.visit_id = js.visit_id;
+        query = f"""  SELECT sv.site_url, sv.visit_id, js.visit_id,
+                        js.script_url, js.operation, js.arguments, js.symbol, js.value
+                        FROM javascript as js LEFT JOIN site_visits as sv
+                        ON sv.visit_id = js.visit_id WHERE
+                        js.script_url <> '' AND js.visit_id IN {format(chunk)} ;
                         """
 
         all_rows = c.execute(query).fetchall()
