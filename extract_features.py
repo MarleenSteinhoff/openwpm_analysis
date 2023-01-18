@@ -1262,6 +1262,232 @@ def extract_features_chunks(db_file, out_csv, id_urls_map=defaultdict(), max_ran
 
         print("Finished feature extraction")
 
+def extract_features_chunks_linear(db_file, out_csv, id_urls_map=defaultdict(), max_rank=None):
+    print("extract_features_chunks")
+    """Extract fingerprinting related features from the javascript table
+    of the crawl database.
+    Although we use script_url to attribute the access or the function call,
+    it may not always give the right script.
+    For instance when a script uses jquery to listen to sensor events we'll
+    attribute the (e.g. sensor related) event listening to jquery. The script
+    that uses jquery should still be in the call_stack, but not necessarily at
+    the top or bottom).
+    TODO: use call_stack to get other potential scripts.
+    The problem is how to do the attribution then, assign all access to all
+    scripts that appear in the call_stack?"""
+    num_nonetype_arguments = defaultdict()
+    # high level features
+    canvas_reads = defaultdict(set)
+    canvas_writes = defaultdict(set)
+    canvas_texts = defaultdict(set)
+    canvas_banned_calls = defaultdict(set)
+    canvas_styles = defaultdict(lambda: defaultdict(set))
+    battery_level_access = defaultdict(set)
+    battery_charging_time_access = defaultdict(set)
+    battery_discharging_time_access = defaultdict(set)
+    audio_ctx_calls = defaultdict(lambda: defaultdict(set))
+    webrtc_calls = defaultdict(lambda: defaultdict(set))
+    canvas_used_fonts = defaultdict(lambda: defaultdict(set))
+    canvas_measure_text_calls = defaultdict(int)
+    # simple features
+    script_ranks = defaultdict(set)  # site ranks where a script is embedded
+    script_features = defaultdict(set)
+    adblock_checked_scripts = set()  # to prevent repeated lookups
+    third_party_scripts = set()
+    first_party_script = set()
+    connection = sqlite3.connect(db_file)
+    connection.row_factory = sqlite3.Row
+    c = connection.cursor()
+
+
+##########################
+    print("processing the dataset in chunks")
+
+    chunk_size = 250000 # amount of visit_ids per iteration
+    l = list(split(id_urls_map, chunk_size))
+    for chunk in l:
+
+        query = f"""SELECT sv.site_url, sv.visit_id, js.visit_id,
+                        js.script_url, js.operation, js.arguments, js.symbol, js.value
+                        FROM javascript as js LEFT JOIN site_visits as sv
+                        ON sv.visit_id = js.visit_id WHERE
+                        js.script_url <> '' AND js.visit_id IN {format(chunk)} 
+                        """
+
+
+        all_rows = c.execute(query).fetchall()
+        print("len rows in this chunk {}".format(len(all_rows)))
+        print("Query executed")
+
+        print("Starting feature extraction")
+        for row in tqdm(c.execute(query).fetchall()):
+            visit_id = row["visit_id"]
+            site_url = row["site_url"]
+            script_url = row["script_url"]
+            operation = row["operation"]
+            symbol = row["symbol"]
+            value = row["value"]
+            arguments = row["arguments"]
+
+            # Exclude relative URLs, data urls, blobs, javascript URLs
+            if not (script_url.startswith("http://")
+                    or script_url.startswith("https://")):
+                continue
+
+            script_adress = get_base_script_url(script_url)
+
+            third_party_script = False
+            if is_third_party(script_url, site_url):
+                third_party_scripts.add(script_adress)
+                third_party_script = True
+
+            # get the simple feature for this call
+            feat = get_simple_feature_from_js_info(operation, arguments, symbol)
+            if feat is not None:
+                script_features[script_adress].add(feat)
+            else:
+                if script_url in num_nonetype_arguments:
+                    num_nonetype_arguments[script_url] += 1
+                else:
+                    num_nonetype_arguments[script_url] = 1
+            if script_adress in script_ranks:
+                script_ranks[script_adress].add(visit_id)
+            else:
+                script_ranks[script_adress] = {visit_id}
+
+            # High level features
+            # Canvas fingerprinting
+            if symbol in CANVAS_READ_FUNCS and operation == "call":
+                if (symbol == "CanvasRenderingContext2D.getImageData" and
+                        is_get_image_data_dimensions_too_small(arguments)):
+                    continue
+                canvas_reads[script_adress].add(visit_id)
+            elif symbol in CANVAS_WRITE_FUNCS:
+                text = get_canvas_text(arguments)
+                # Python miscalculates the length of unicode strings that contain
+                # surrogate pairs such as emojis. This make the string look longer
+                # it really is and cause false positives.
+                # For instance "🏴​󠁧​󠁢​󠁥​󠁮​󠁧", which is written onto canvas by
+                # Wordpress to check emoji support, gives a length of 13.
+                # We ignore non-ascii characters to prevent these false positives.
+                if len(text.encode('ascii', 'ignore')) >= MIN_CANVAS_TEXT_LEN:
+                    canvas_writes[script_adress].add(visit_id)
+                    # the following is used to debug false positives
+                    canvas_texts[(script_adress, visit_id)].add(text)
+            elif symbol == "CanvasRenderingContext2D.fillStyle" and \
+                    operation == "call":
+                canvas_styles[script_adress][visit_id].add(value)
+            elif operation == "call" and symbol in CANVAS_FP_DO_NOT_CALL_LIST:
+                canvas_banned_calls[script_adress].add(visit_id)
+            # Canvas font fingerprinting
+            elif symbol == "CanvasRenderingContext2D.font" and operation == "set":
+                canvas_used_fonts[script_adress][visit_id].add(value)
+            elif symbol == "CanvasRenderingContext2D.measureText" and \
+                    operation == "call":
+                text = json.loads(arguments)["0"]
+                canvas_measure_text_calls[(script_adress, visit_id, text)] += 1
+            elif (operation == "call" and symbol in WEBRTC_FP_CALLS) or \
+                    (operation == "set" and
+                     symbol == "RTCPeerConnection.onicecandidate"):
+                webrtc_calls[script_adress][visit_id].add(symbol)
+
+            # Battery Status API
+            elif operation == "get" and symbol in "BatteryManager.level":
+                battery_level_access[script_adress].add(visit_id)
+            elif operation == "get" and symbol in BATTERY_CHARGING_TIME_CALLS:
+                battery_charging_time_access[script_adress].add(visit_id)
+            elif operation == "get" and symbol in BATTERY_DISCHARGING_TIME_CALLS:
+                battery_discharging_time_access[script_adress].add(visit_id)
+            elif (operation == "call"
+                  and symbol == "BatteryManager.addEventListener"):
+                event_type = json.loads(arguments)["0"]
+                if event_type == "levelchange":
+                    battery_level_access[script_adress].add(visit_id)
+                elif event_type == "chargingtimechange":
+                    battery_charging_time_access[script_adress].add(visit_id)
+                elif event_type == "dischargingtimechange":
+                    battery_discharging_time_access[script_adress].add(visit_id)
+
+            # Audio Context API
+            elif symbol in AUDIO_CONTEXT_FUNCS:
+                audio_ctx_calls[script_adress][visit_id].add(symbol)
+
+
+    print("Feature extraction done, saving results")
+    canvas_fingerprinters = get_canvas_fingerprinters(canvas_reads,
+                                                      canvas_writes,
+                                                      canvas_styles,
+                                                      canvas_banned_calls,
+                                                      canvas_texts)
+    canvas_font_fingerprinters = \
+        get_canvas_font_fingerprinters(canvas_used_fonts,
+                                       canvas_measure_text_calls)
+    audio_ctx_fingerprinters = get_audio_ctx_fingerprinters(audio_ctx_calls)
+    webrtc_fingerprinters = get_webrtc_fingerprinters(webrtc_calls)
+    battery_fingerprinters = get_battery_fingerprinters(
+        battery_level_access, battery_charging_time_access,
+        battery_discharging_time_access)
+
+    request_triggering_scripts, third_party_request_triggering_scripts = \
+        get_request_triggering_scripts(db_file)
+
+    if DEBUG:
+        print("audio_ctx_fingerprinters", audio_ctx_fingerprinters)
+        print("canvas_fingerprinters", canvas_fingerprinters)
+        print("canvas_font_fingerprinters", canvas_font_fingerprinters)
+        print("webrtc_fingerprinters", webrtc_fingerprinters)
+        print("battery_fingerprinters", battery_fingerprinters)
+        print("request_triggering_scripts", request_triggering_scripts)
+        print("third_party_request_triggering_scripts", third_party_request_triggering_scripts)
+        print(THIRD_PARTY_SCRIPT, third_party_scripts)
+        # print(EASYLIST_BLOCKED, easylist_blocked_scripts)
+        # print(EASYPRIVACY_BLOCKED, easyprivacy_blocked_scripts)
+        # print UBLOCK_ORIGIN_BLOCKED, ublock_blocked_scripts
+        # print(DISCONNECT_BLOCKED, disconnect_blocked_scripts)
+
+    high_level_feat_dict = {
+        NONE_TYPE_ARGS: num_nonetype_arguments,
+        CANVAS_FP: canvas_fingerprinters,
+        CANVAS_FONT_FP: canvas_font_fingerprinters,
+        AUDIO_CTX_FP: audio_ctx_fingerprinters,
+        WEBRTC_FP: webrtc_fingerprinters,
+        BATTERY_FP: battery_fingerprinters,
+        TRIGGERS_REQUEST: request_triggering_scripts,
+        TRIGGERS_TP_REQUEST: third_party_request_triggering_scripts,
+        # EASYLIST_BLOCKED: easylist_blocked_scripts,
+        # EASYPRIVACY_BLOCKED: easyprivacy_blocked_scripts,
+        # UBLOCK_ORIGIN_BLOCKED: ublock_blocked_scripts,
+        # DISCONNECT_BLOCKED: disconnect_blocked_scripts,
+        THIRD_PARTY_SCRIPT: third_party_scripts
+    }
+
+    count_dict = {
+        NUM_CANVAS_FP: len(canvas_fingerprinters),
+        NUM_CANVAS_FONT_FP: len(canvas_font_fingerprinters),
+        NUM_AUDIO_CTX_FP: len(audio_ctx_fingerprinters),
+        NUM_WEBRTC_FP: len(webrtc_fingerprinters),
+        NUM_BATTERY_FP: len(battery_fingerprinters),
+        NUM_TRIGGERS_REQUEST: len(request_triggering_scripts),
+        NUM_TRIGGERS_TP_REQUEST: len(third_party_request_triggering_scripts),
+        NUM_THIRD_PARTY_SCRIPT: len(third_party_scripts),
+        NUM_FIRST_PARTIES: len(first_party_script)
+    }
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "count_features_chunks.json")), 'w') as fp:
+        json_string = json.dumps(count_dict, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "high_level_feat_dict_chunks.json")), 'w') as fp:
+        json_string = json.dumps(high_level_feat_dict, cls=SetEncoder)
+        fp.write(json_string)
+
+    with open(join(OUT_DIR, "%s_%s" % (CRAWL_NAME, "script_ranks_chunks.json")), 'w') as fp:
+        json_string = json.dumps(script_ranks, cls=SetEncoder)
+        fp.write(json_string)
+
+
+        print("Finished feature extraction")
+
 def get_canvas_font_fingerprinters(canvas_used_fonts,
                                    canvas_measure_text_calls):
     """
@@ -1478,7 +1704,6 @@ def write_feats_to_csv(script_features,
 
             f.write("\t%s" % len(overall_script_ranks[script_url]) + "\n")
 
-
 def write_script_visit_ids(script_visit_ids, out_csv):
     with open(out_csv, "a") as f:
         empty_file(f)  # start a fresh file
@@ -1535,11 +1760,7 @@ if __name__ == '__main__':
         selected_visit_ids = tuple(tuple_id_url['visit_id'].tolist())
         print("crawlname", CRAWL_NAME)
         print(len(selected_visit_ids))
-        if CRAWL_NAME in ["2019-06", "2018-06", "2018-01"]:
-            extract_features_chunks(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
-        else:
-            extract_features(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
-
+        extract_features_chunks_linear(crawl_db_path, out_csv, selected_visit_ids, MAX_RANK)
         get_cookies(crawl_db_path, selected_visit_ids, MAX_RANK)
     else:
         get_cookies(crawl_db_path, MAX_RANK)
